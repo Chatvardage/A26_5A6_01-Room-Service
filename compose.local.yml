@@ -3,12 +3,18 @@ services:
     build: .
     environment:
       PORT: 3003
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chatvardage?schema=public
+      DATABASE_URL: postgresql://chatvardage:chatvardage@postgres:5432/chatvardage?schema=public
     ports:
       - "3003:3003"
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   postgres:
     image: postgres:17-alpine

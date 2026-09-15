@@ -90,7 +90,7 @@ Prérequis : Node.js 22 et PostgreSQL, ou Docker.
 npm install
 cp .env.example .env
 npx prisma generate
-npx prisma migrate dev
+npx prisma migrate deploy
 npm run start:dev
 ```
 
@@ -125,7 +125,7 @@ Dans l'environnement final de l'équipe, ce service doit plutôt être référen
 
 ```env
 PORT=3003
-DATABASE_URL="postgresql://chatvardage:chatvardage@postgres:5432/chatvardage?schema=public"
+DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvardage_rooms?schema=public"
 ```
 
 ## Exemple — créer un salon
@@ -240,3 +240,49 @@ Réponse attendue :
 Le service reprend la logique de salon déjà présente dans le contrôle 1, mais remplace le stockage local/simulé par PostgreSQL.
 
 Les messages envoyés dans les salons peuvent rester simulés dans le client Electron pour ce contrôle. Le vrai temps réel demandé concerne les messages privés, qui sont gérés par le Messaging Service.
+
+## Place du service dans l'architecture du Contrôle 2
+
+Le projet d'équipe est séparé en responsabilités :
+
+```text
+Frontend Electron
+      |
+      v
+Serveur-API (Gateway)
+      |
+      +--> Authentification
+      +--> Room-Service        <-- ce dépôt
+      +--> Message-Service
+      +--> User-Config-Service
+
+Dashboard Admin --> Serveur-API
+
+Infra --> Docker Compose + PostgreSQL + Redis + configuration globale
+```
+
+Le **Room-Service ne gère volontairement ni Redis, ni WebSocket, ni les messages de groupe**. Pour le Contrôle 2, le temps réel demandé concerne les messages privés et appartient au `Message-Service`. Les messages de salons restent simulés jusqu'au contrôle ultérieur, conformément à l'énoncé.
+
+Le Dashboard d'administration peut consulter et supprimer les salons en passant par le Serveur-API, qui transmet ensuite les requêtes autorisées à ce service.
+
+## Vérifications avant remise
+
+À partir d'un clone propre du dépôt :
+
+```bash
+docker compose -f compose.local.yml up --build
+curl http://localhost:3003/api/health
+```
+
+Puis, pour vérifier le code hors Docker :
+
+```bash
+npm ci
+npx prisma generate
+npm run build
+npm test
+npm run test:e2e
+npm run lint
+```
+
+Le `docker-compose.yml` global du dépôt `Infra` demeure le point de démarrage de l'environnement complet de l'équipe pour la démonstration du Contrôle 2.

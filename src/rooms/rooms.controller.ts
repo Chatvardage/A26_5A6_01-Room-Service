@@ -26,7 +26,8 @@ import { RoomsService } from './rooms.service';
 @ApiHeader({
   name: 'x-user-id',
   required: true,
-  description: "Identifiant de l'utilisateur authentifié, transmis par l'API Gateway",
+  description:
+    "Identifiant de l'utilisateur authentifié, transmis par l'API Gateway",
 })
 @ApiHeader({
   name: 'x-user-role',
@@ -44,7 +45,9 @@ export class RoomsController {
   }
 
   @Get('invitations/me')
-  @ApiOperation({ summary: "Récupère les invitations de l'utilisateur connecté" })
+  @ApiOperation({
+    summary: "Récupère les invitations de l'utilisateur connecté",
+  })
   findMyInvitations(@Headers('x-user-id') userId?: string) {
     return this.roomsService.findInvitationsForUser(this.requireUserId(userId));
   }
@@ -57,10 +60,7 @@ export class RoomsController {
 
   @Post()
   @ApiOperation({ summary: 'Crée un salon' })
-  create(
-    @Body() dto: CreateRoomDto,
-    @Headers('x-user-id') userId?: string,
-  ) {
+  create(@Body() dto: CreateRoomDto, @Headers('x-user-id') userId?: string) {
     return this.roomsService.create(dto, this.requireUserId(userId));
   }
 
@@ -131,20 +131,16 @@ export class RoomsController {
   }
 
   @Post(':id/join')
-  @ApiOperation({ summary: 'Rejoint un salon public ou un salon privé sur invitation' })
-  join(
-    @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
-  ) {
+  @ApiOperation({
+    summary: 'Rejoint un salon public ou un salon privé sur invitation',
+  })
+  join(@Param('id') id: string, @Headers('x-user-id') userId?: string) {
     return this.roomsService.join(id, this.requireUserId(userId));
   }
 
   @Post(':id/leave')
   @ApiOperation({ summary: 'Quitte un salon' })
-  leave(
-    @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
-  ) {
+  leave(@Param('id') id: string, @Headers('x-user-id') userId?: string) {
     return this.roomsService.leave(id, this.requireUserId(userId));
   }
 

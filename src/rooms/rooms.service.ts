@@ -46,7 +46,7 @@ export class RoomsService {
     const room = await this.prisma.room.create({
       data: {
         name: dto.nom.trim(),
-        visibility: (dto.visibilite ?? 'public') as RoomVisibility,
+        visibility: dto.visibilite ?? 'public',
         ownerId: actorId,
         members: { create: { userId: actorId } },
       },
@@ -72,9 +72,7 @@ export class RoomsService {
       where: { id },
       data: {
         ...(dto.nom !== undefined ? { name: dto.nom.trim() } : {}),
-        ...(dto.visibilite !== undefined
-          ? { visibility: dto.visibilite as RoomVisibility }
-          : {}),
+        ...(dto.visibilite !== undefined ? { visibility: dto.visibilite } : {}),
       },
       include: roomInclude,
     });
@@ -106,7 +104,11 @@ export class RoomsService {
       return this.toResponse(room);
     }
 
-    if (!room.invitations.some((invitation) => invitation.userId === invitedUserId)) {
+    if (
+      !room.invitations.some(
+        (invitation) => invitation.userId === invitedUserId,
+      )
+    ) {
       await this.prisma.roomInvitation.create({
         data: { roomId: id, userId: invitedUserId },
       });
@@ -117,9 +119,7 @@ export class RoomsService {
 
   async acceptInvitation(id: string, actorId: string): Promise<RoomResponse> {
     const room = await this.getRoomOrThrow(id);
-    const invitation = room.invitations.find(
-      (item) => item.userId === actorId,
-    );
+    const invitation = room.invitations.find((item) => item.userId === actorId);
 
     if (!invitation) {
       throw new NotFoundException(`Aucune invitation au salon ${id}`);
@@ -187,7 +187,9 @@ export class RoomsService {
     const room = await this.getRoomOrThrow(id);
 
     if (room.ownerId === actorId) {
-      throw new ForbiddenException("L'hôte ne peut pas quitter son propre salon");
+      throw new ForbiddenException(
+        "L'hôte ne peut pas quitter son propre salon",
+      );
     }
 
     if (!room.members.some((member) => member.userId === actorId)) {

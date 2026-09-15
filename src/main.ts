@@ -20,10 +20,7 @@ async function bootstrap() {
     .setTitle('Chatvardage Rooms Service')
     .setDescription('API de gestion des salons de Chatvardage')
     .setVersion('2.0.0')
-    .addApiKey(
-      { type: 'apiKey', in: 'header', name: 'x-user-id' },
-      'x-user-id',
-    )
+    .addApiKey({ type: 'apiKey', in: 'header', name: 'x-user-id' }, 'x-user-id')
     .addApiKey(
       { type: 'apiKey', in: 'header', name: 'x-user-role' },
       'x-user-role',
@@ -33,7 +30,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document);
 
-  const port = Number(process.env.PORT ?? 3003);
+  const port = Number({ PORT: '3003', ...process.env }.PORT);
   await app.listen(port, '0.0.0.0');
 }
 

@@ -44,7 +44,14 @@ export class AuthService {
       );
     }
 
-    const user = (await response.json()) as Partial<AuthenticatedUser>;
+    let user: Partial<AuthenticatedUser>;
+    try {
+      user = (await response.json()) as Partial<AuthenticatedUser>;
+    } catch {
+      throw new ServiceUnavailableException(
+        "Réponse invalide du service d'authentification",
+      );
+    }
     if (!user.id || !user.role) {
       throw new ServiceUnavailableException(
         "Réponse invalide du service d'authentification",

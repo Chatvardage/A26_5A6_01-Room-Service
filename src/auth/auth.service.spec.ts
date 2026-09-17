@@ -55,6 +55,19 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
+  it('maps a non-JSON Auth response to unavailable', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError('invalid json');
+      },
+    });
+    await expect(
+      new AuthService().authenticate('Bearer jwt'),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
   it('rejects non-success and malformed Auth responses', async () => {
     global.fetch = jest
       .fn()

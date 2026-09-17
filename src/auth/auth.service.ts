@@ -13,6 +13,8 @@ export type AuthenticatedUser = {
   modifie_le: string;
 };
 
+const VALID_ROLES = ['admin', 'moderateur', 'utilisateur'] as const;
+
 @Injectable()
 export class AuthService {
   async authenticate(authorization?: string): Promise<AuthenticatedUser> {
@@ -23,7 +25,9 @@ export class AuthService {
     const baseUrl = (
       process.env.AUTH_SERVICE_URL ?? 'http://localhost:3001'
     ).replace(/\/$/, '');
+
     let response: Response;
+
     try {
       response = await fetch(`${baseUrl}/api/auth/me`, {
         headers: { Authorization: authorization },
@@ -38,6 +42,7 @@ export class AuthService {
     if (response.status === 401) {
       throw new UnauthorizedException('Jeton invalide, expiré ou révoqué');
     }
+
     if (!response.ok) {
       throw new ServiceUnavailableException(
         "Validation de l'authentification impossible",
@@ -45,6 +50,7 @@ export class AuthService {
     }
 
     let user: Partial<AuthenticatedUser>;
+
     try {
       user = (await response.json()) as Partial<AuthenticatedUser>;
     } catch {
@@ -52,11 +58,23 @@ export class AuthService {
         "Réponse invalide du service d'authentification",
       );
     }
-    if (!user.id || !user.role) {
+
+    if (
+      typeof user.id !== 'string' ||
+      user.id.trim() === '' ||
+      typeof user.pseudo !== 'string' ||
+      user.pseudo.trim() === '' ||
+      typeof user.courriel !== 'string' ||
+      user.courriel.trim() === '' ||
+      !VALID_ROLES.includes(user.role as (typeof VALID_ROLES)[number]) ||
+      typeof user.cree_le !== 'string' ||
+      typeof user.modifie_le !== 'string'
+    ) {
       throw new ServiceUnavailableException(
         "Réponse invalide du service d'authentification",
       );
     }
+
     return user as AuthenticatedUser;
   }
 }

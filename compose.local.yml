@@ -3,6 +3,7 @@ services:
     build: .
     environment:
       PORT: 3003
+      NODE_ENV: development
       DATABASE_URL: postgresql://room_service:room_service_dev@postgres:5432/chatvardage_rooms?schema=public
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://host.docker.internal:3001}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}

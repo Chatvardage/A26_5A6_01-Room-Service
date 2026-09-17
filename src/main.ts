@@ -3,6 +3,26 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+function validateCorsOrigin(origin: string): string {
+  let parsedOrigin: URL;
+
+  try {
+    parsedOrigin = new URL(origin);
+  } catch {
+    throw new Error(`Origine CORS invalide : ${origin}`);
+  }
+
+  if (parsedOrigin.protocol !== 'http:' && parsedOrigin.protocol !== 'https:') {
+    throw new Error(`Origine CORS invalide : ${origin}`);
+  }
+
+  if (parsedOrigin.origin !== origin) {
+    throw new Error(`Origine CORS invalide : ${origin}`);
+  }
+
+  return origin;
+}
+
 export function resolveCorsOrigins(): string[] {
   const configuredOrigins = (process.env.CORS_ORIGINS ?? '')
     .split(',')
@@ -10,7 +30,7 @@ export function resolveCorsOrigins(): string[] {
     .filter(Boolean);
 
   if (configuredOrigins.length > 0) {
-    return configuredOrigins;
+    return configuredOrigins.map(validateCorsOrigin);
   }
 
   if (process.env.NODE_ENV === 'production') {
@@ -24,11 +44,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
-
   const origins = resolveCorsOrigins();
-
   app.enableCors({ origin: origins, credentials: false });
-
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

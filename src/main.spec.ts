@@ -76,7 +76,6 @@ describe('bootstrap', () => {
       bearerFormat: 'JWT',
     });
     expect(build).toHaveBeenCalled();
-
     expect(listen).toHaveBeenCalledWith(3999, '0.0.0.0');
   });
 
@@ -87,20 +86,20 @@ describe('bootstrap', () => {
     expect(listen).toHaveBeenCalledWith(3003, '0.0.0.0');
   });
 
-  it('configure plusieurs origines CORS', async () => {
+  it('configure plusieurs origines CORS valides', async () => {
     process.env.CORS_ORIGINS =
-      ' http://localhost:5173, http://localhost:3000 , ';
+      ' http://localhost:5173, https://app.example.test , ';
 
     await import('./main');
     await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(app.enableCors).toHaveBeenCalledWith({
-      origin: ['http://localhost:5173', 'http://localhost:3000'],
+      origin: ['http://localhost:5173', 'https://app.example.test'],
       credentials: false,
     });
   });
 
-  it('retombe sur localhost si CORS_ORIGINS est vide', async () => {
+  it('retombe sur localhost si CORS_ORIGINS est vide hors production', async () => {
     process.env.CORS_ORIGINS = '';
 
     await import('./main');
@@ -111,6 +110,7 @@ describe('bootstrap', () => {
       credentials: false,
     });
   });
+
   it('refuse de démarrer sans CORS_ORIGINS en production', async () => {
     const main = await import('./main');
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -120,6 +120,39 @@ describe('bootstrap', () => {
 
     expect(() => main.resolveCorsOrigins()).toThrow(
       'CORS_ORIGINS doit être défini en production',
+    );
+  });
+
+  it('refuse une origine CORS sans URL valide', async () => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.CORS_ORIGINS = '://invalid';
+
+    expect(() => main.resolveCorsOrigins()).toThrow(
+      'Origine CORS invalide : ://invalid',
+    );
+  });
+
+  it('refuse une origine CORS sans schéma HTTP(S)', async () => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.CORS_ORIGINS = 'localhost:5173';
+
+    expect(() => main.resolveCorsOrigins()).toThrow(
+      'Origine CORS invalide : localhost:5173',
+    );
+  });
+
+  it('refuse une origine CORS contenant un chemin', async () => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.CORS_ORIGINS = 'https://example.test/app';
+
+    expect(() => main.resolveCorsOrigins()).toThrow(
+      'Origine CORS invalide : https://example.test/app',
     );
   });
 });

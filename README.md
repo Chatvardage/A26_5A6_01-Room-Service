@@ -47,9 +47,11 @@ Les routes qui agissent au nom d'un utilisateur reçoivent le JWT final du **ser
 
 Pour chaque action protégée, il appelle `GET /api/auth/me` du service Auth. Auth valide la signature, l'expiration et `version_auth`, recharge l'utilisateur dans PostgreSQL et retourne son rôle courant. Les changements de rôle, suppressions de compte et révocations sont donc pris en compte sans recopier le rôle dans le JWT.
 
-En Docker global, `AUTH_SERVICE_URL=http://auth-service:3001`.
+En intégration Docker locale, le service Auth peut être joint en HTTP sur un réseau de développement. En production (`NODE_ENV=production`), `AUTH_SERVICE_URL` doit obligatoirement utiliser `https://`; le Rooms Service refuse de démarrer avec une URL Auth non sécurisée.
 
-Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai de 3 s, Rooms Service retourne une erreur 503.
+Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai de 3 s, Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes.
+
+L’authentification est encore déclenchée explicitement dans les routes protégées du contrôleur. Une migration vers un `AuthGuard` NestJS reste une amélioration d’architecture possible si d’autres contrôleurs protégés sont ajoutés.
 
 ## Routes
 
@@ -93,7 +95,7 @@ docker compose -f compose.local.yml up --build
 
 Le Compose local crée une base `chatvardage_rooms` avec l'utilisateur `room_service`, exactement comme `.env.example`.
 
-Par défaut, ce compose cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire.
+Par défaut, ce compose force `NODE_ENV=development`, cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire. Sous Linux, l'alias `host.docker.internal` repose sur `host-gateway`, disponible avec Docker Engine 20.10 ou plus récent.
 
 ### Option Node.js + PostgreSQL local
 
@@ -143,11 +145,12 @@ Il démarre :
 
 Pour tester les routes protégées, le service Auth doit aussi être disponible. Le chemin recommandé pour l'intégration complète est le `docker-compose.yml` global du dépôt Infra, qui démarre Auth, Rooms, Messages, PostgreSQL et Redis ensemble.
 
-En production, `CORS_ORIGINS` doit être défini explicitement. Le fallback `http://localhost:5173` dans le code est réservé aux environnements hors production; `compose.local.yml` fournit explicitement cette origine pour le conteneur local.
+En production, `CORS_ORIGINS` doit être défini explicitement et chaque entrée doit être une origine HTTP(S) valide, sans chemin (par exemple `https://app.example.com`). Le fallback `http://localhost:5173` dans le code est réservé aux environnements hors production; `compose.local.yml` fournit explicitement cette origine pour le conteneur local. `AUTH_SERVICE_URL` doit également utiliser HTTPS en production.
 
 ## Variables d'environnement
 
 ```env
+NODE_ENV=development
 PORT=3003
 DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvardage_rooms?schema=public"
 AUTH_SERVICE_URL="http://localhost:3001"

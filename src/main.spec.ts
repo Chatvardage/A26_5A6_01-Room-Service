@@ -38,16 +38,20 @@ jest.mock('@nestjs/swagger', () => ({
 }));
 
 describe('bootstrap', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
     delete process.env.PORT;
     delete process.env.CORS_ORIGINS;
+    process.env.NODE_ENV = 'test';
   });
 
   afterEach(() => {
     delete process.env.PORT;
     delete process.env.CORS_ORIGINS;
+    process.env.NODE_ENV = originalNodeEnv;
   });
 
   it('configure et démarre sur PORT', async () => {
@@ -106,5 +110,16 @@ describe('bootstrap', () => {
       origin: ['http://localhost:5173'],
       credentials: false,
     });
+  });
+  it('refuse de démarrer sans CORS_ORIGINS en production', async () => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.NODE_ENV = 'production';
+    delete process.env.CORS_ORIGINS;
+
+    expect(() => main.resolveCorsOrigins()).toThrow(
+      'CORS_ORIGINS doit être défini en production',
+    );
   });
 });

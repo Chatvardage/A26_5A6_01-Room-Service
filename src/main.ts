@@ -3,19 +3,32 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-
-  app.setGlobalPrefix('api');
+export function resolveCorsOrigins(): string[] {
   const configuredOrigins = (process.env.CORS_ORIGINS ?? '')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
-  const origins =
-    configuredOrigins.length > 0
-      ? configuredOrigins
-      : ['http://localhost:5173'];
+
+  if (configuredOrigins.length > 0) {
+    return configuredOrigins;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CORS_ORIGINS doit être défini en production');
+  }
+
+  return ['http://localhost:5173'];
+}
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  app.setGlobalPrefix('api');
+
+  const origins = resolveCorsOrigins();
+
   app.enableCors({ origin: origins, credentials: false });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

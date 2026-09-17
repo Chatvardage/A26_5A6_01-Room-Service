@@ -153,9 +153,41 @@ describe('AuthService', () => {
       },
     });
 
-    await expect(
-      new AuthService().authenticate('Bearer jwt'),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(new AuthService().authenticate('Bearer jwt')).rejects.toThrow(
+      "Réponse invalide du service d'authentification : JSON illisible",
+    );
+  });
+
+  it('rejects null, arrays and primitive JSON responses', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => 'invalid',
+      });
+
+    const service = new AuthService();
+
+    await expect(service.authenticate('Bearer jwt')).rejects.toThrow(
+      "Réponse invalide du service d'authentification : corps JSON non objet",
+    );
+    await expect(service.authenticate('Bearer jwt')).rejects.toThrow(
+      "Réponse invalide du service d'authentification : corps JSON non objet",
+    );
+    await expect(service.authenticate('Bearer jwt')).rejects.toThrow(
+      "Réponse invalide du service d'authentification : corps JSON non objet",
+    );
   });
 
   it('rejects non-success and malformed Auth responses', async () => {
@@ -175,8 +207,8 @@ describe('AuthService', () => {
       new AuthService().authenticate('Bearer jwt'),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
 
-    await expect(
-      new AuthService().authenticate('Bearer jwt'),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(new AuthService().authenticate('Bearer jwt')).rejects.toThrow(
+      "Réponse invalide du service d'authentification : champs utilisateur invalides",
+    );
   });
 });

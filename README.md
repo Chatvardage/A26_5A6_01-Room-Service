@@ -93,6 +93,8 @@ docker compose -f compose.local.yml up --build
 
 Le Compose local crée une base `chatvardage_rooms` avec l'utilisateur `room_service`, exactement comme `.env.example`.
 
+Par défaut, ce compose cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire.
+
 ### Option Node.js + PostgreSQL local
 
 Avant de démarrer le service, PostgreSQL doit contenir la base et le rôle correspondant à `.env.example` :
@@ -140,6 +142,8 @@ Il démarre :
 - PostgreSQL sur le port `5432`.
 
 Pour tester les routes protégées, le service Auth doit aussi être disponible. Le chemin recommandé pour l'intégration complète est le `docker-compose.yml` global du dépôt Infra, qui démarre Auth, Rooms, Messages, PostgreSQL et Redis ensemble.
+
+En production, `CORS_ORIGINS` doit être défini explicitement. Le fallback `http://localhost:5173` dans le code est réservé aux environnements hors production; `compose.local.yml` fournit explicitement cette origine pour le conteneur local.
 
 ## Variables d'environnement
 

@@ -49,15 +49,23 @@ export class AuthService {
       );
     }
 
-    let user: Partial<AuthenticatedUser>;
+    let payload: unknown;
 
     try {
-      user = (await response.json()) as Partial<AuthenticatedUser>;
+      payload = await response.json();
     } catch {
       throw new ServiceUnavailableException(
-        "Réponse invalide du service d'authentification",
+        "Réponse invalide du service d'authentification : JSON illisible",
       );
     }
+
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new ServiceUnavailableException(
+        "Réponse invalide du service d'authentification : corps JSON non objet",
+      );
+    }
+
+    const user = payload as Partial<AuthenticatedUser>;
 
     if (
       typeof user.id !== 'string' ||
@@ -71,7 +79,7 @@ export class AuthService {
       typeof user.modifie_le !== 'string'
     ) {
       throw new ServiceUnavailableException(
-        "Réponse invalide du service d'authentification",
+        "Réponse invalide du service d'authentification : champs utilisateur invalides",
       );
     }
 

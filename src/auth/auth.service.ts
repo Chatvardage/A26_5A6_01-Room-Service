@@ -19,9 +19,8 @@ export type AuthenticatedUser = {
 const VALID_ROLES = ['admin', 'moderateur', 'utilisateur'] as const;
 
 export function resolveAuthServiceUrl(): string {
-  const baseUrl = (
-    process.env.AUTH_SERVICE_URL ?? 'http://localhost:3001'
-  ).replace(/\/+$/, '');
+  const rawUrl = process.env.AUTH_SERVICE_URL ?? 'http://localhost:3001';
+  const baseUrl = rawUrl.replace(/\/+$/, '');
 
   let parsedUrl: URL;
 
@@ -37,7 +36,7 @@ export function resolveAuthServiceUrl(): string {
     parsedUrl.hash !== ''
   ) {
     throw new Error(
-      `AUTH_SERVICE_URL ne doit pas contenir de chemin ou paramètres : "${baseUrl}"`,
+      `AUTH_SERVICE_URL ne doit pas contenir de chemin ou paramètres : "${rawUrl}"`,
     );
   }
 

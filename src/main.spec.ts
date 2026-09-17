@@ -99,6 +99,14 @@ describe('bootstrap', () => {
     expect(() => main.resolvePort()).toThrow('Variable PORT invalide : "abc"');
   });
 
+  it('refuse un PORT vide comme invalide', async () => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.PORT = '   ';
+    expect(() => main.resolvePort()).toThrow('Variable PORT invalide : "   "');
+  });
+
   it.each(['0', '65536'])('refuse un PORT hors plage: %s', async (port) => {
     const main = await import('./main');
     await new Promise<void>((resolve) => setImmediate(resolve));

@@ -1,3 +1,4 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { AuthenticatedRequest } from '../auth/auth.guard';
 import { RoomsController } from './rooms.controller';
@@ -83,6 +84,12 @@ describe('RoomsController', () => {
   it('create', () => {
     controller.create({ nom: 'x' }, request);
     expect(roomsService.create).toHaveBeenCalledWith({ nom: 'x' }, 'u');
+  });
+
+  it('rejette proprement une route protégée sans utilisateur', () => {
+    expect(() =>
+      controller.create({ nom: 'x' }, {} as AuthenticatedRequest),
+    ).toThrow(UnauthorizedException);
   });
 
   it('update uses the current role attached by RoomAuthGuard', () => {

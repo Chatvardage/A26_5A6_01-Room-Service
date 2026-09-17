@@ -348,6 +348,7 @@ describe('AuthService', () => {
 
   it.each([
     'http://auth-service:3001/v1',
+    'http://auth-service:3001/v1/',
     'http://auth-service:3001?tenant=chatvardage',
     'http://auth-service:3001#fragment',
   ])('rejects AUTH_SERVICE_URL with path or parameters: %s', (url) => {

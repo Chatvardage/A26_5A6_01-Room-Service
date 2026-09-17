@@ -43,6 +43,7 @@ describe('RoomAuthGuard', () => {
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(auth.authenticate).not.toHaveBeenCalled();
+    expect(request.user).toBeUndefined();
   });
 
   it('authenticates protected routes and attaches the user to the request', async () => {

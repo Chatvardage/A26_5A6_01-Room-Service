@@ -1,0 +1,27 @@
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app.module.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/auth/auth.guard.spec.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/auth/auth.guard.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/auth/auth.module.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/auth/auth.service.spec.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/auth/auth.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/common/health.controller.spec.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/common/health.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main.spec.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/rooms/rooms.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/rooms/rooms.module.ts', LF will be replaced by CRLF the next time Git touches it
+ README.md                            |  6 [32m+++[m[31m---[m
+ src/app.module.ts                    | 11 [32m++++++++++[m[31m-[m
+ src/auth/auth.guard.spec.ts          |  1 [32m+[m
+ src/auth/auth.guard.ts               |  2 [32m+[m[31m-[m
+ src/auth/auth.module.ts              |  5 [32m++[m[31m---[m
+ src/auth/auth.service.spec.ts        | 12 [32m++++++++++++[m
+ src/auth/auth.service.ts             | 12 [32m+++++++++++[m[31m-[m
+ src/common/health.controller.spec.ts |  9 [32m+++++++++[m
+ src/common/health.controller.ts      |  2 [32m++[m
+ src/main.spec.ts                     | 23 [32m+++++++++++++++++++++++[m
+ src/main.ts                          |  8 [32m++++++[m[31m--[m
+ src/rooms/rooms.controller.ts        | 30 [32m++++++++++++[m[31m------------------[m
+ src/rooms/rooms.module.ts            |  2 [31m--[m
+ 13 files changed, 92 insertions(+), 31 deletions(-)

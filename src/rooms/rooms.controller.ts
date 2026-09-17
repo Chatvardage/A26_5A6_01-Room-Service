@@ -9,7 +9,6 @@ import {
   Patch,
   Post,
   Req,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -17,11 +16,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import {
-  AuthenticatedRequest,
-  RoomAuthGuard,
-  PublicRoute,
-} from '../auth/auth.guard';
+import { AuthenticatedRequest, PublicRoute } from '../auth/auth.guard';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
@@ -29,7 +24,6 @@ import { RoomsService } from './rooms.service';
 
 @ApiTags('Rooms')
 @ApiBearerAuth()
-@UseGuards(RoomAuthGuard)
 @Controller('rooms')
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
@@ -46,7 +40,7 @@ export class RoomsController {
     summary: "Récupère les invitations de l'utilisateur connecté",
   })
   findMyInvitations(@Req() request: AuthenticatedRequest) {
-    return this.roomsService.findInvitationsForUser(request.user.id);
+    return this.roomsService.findInvitationsForUser(request.user!.id);
   }
 
   @Get(':id')
@@ -59,7 +53,7 @@ export class RoomsController {
   @Post()
   @ApiOperation({ summary: 'Crée un salon' })
   create(@Body() dto: CreateRoomDto, @Req() request: AuthenticatedRequest) {
-    return this.roomsService.create(dto, request.user.id);
+    return this.roomsService.create(dto, request.user!.id);
   }
 
   @Patch(':id')
@@ -72,8 +66,8 @@ export class RoomsController {
     return this.roomsService.update(
       id,
       dto,
-      request.user.id,
-      request.user.role,
+      request.user!.id,
+      request.user!.role,
     );
   }
 
@@ -85,7 +79,7 @@ export class RoomsController {
     @Param('id') id: string,
     @Req() request: AuthenticatedRequest,
   ): Promise<void> {
-    await this.roomsService.remove(id, request.user.id, request.user.role);
+    await this.roomsService.remove(id, request.user!.id, request.user!.role);
   }
 
   @Post(':id/invitations')
@@ -98,8 +92,8 @@ export class RoomsController {
     return this.roomsService.invite(
       id,
       dto.utilisateurId,
-      request.user.id,
-      request.user.role,
+      request.user!.id,
+      request.user!.role,
     );
   }
 
@@ -109,7 +103,7 @@ export class RoomsController {
     @Param('id') id: string,
     @Req() request: AuthenticatedRequest,
   ) {
-    return this.roomsService.acceptInvitation(id, request.user.id);
+    return this.roomsService.acceptInvitation(id, request.user!.id);
   }
 
   @Post(':id/invitations/refuse')
@@ -118,7 +112,7 @@ export class RoomsController {
     @Param('id') id: string,
     @Req() request: AuthenticatedRequest,
   ) {
-    return this.roomsService.refuseInvitation(id, request.user.id);
+    return this.roomsService.refuseInvitation(id, request.user!.id);
   }
 
   @Post(':id/join')
@@ -126,12 +120,12 @@ export class RoomsController {
     summary: 'Rejoint un salon public ou un salon privé sur invitation',
   })
   join(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    return this.roomsService.join(id, request.user.id);
+    return this.roomsService.join(id, request.user!.id);
   }
 
   @Post(':id/leave')
   @ApiOperation({ summary: 'Quitte un salon' })
   leave(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    return this.roomsService.leave(id, request.user.id);
+    return this.roomsService.leave(id, request.user!.id);
   }
 }

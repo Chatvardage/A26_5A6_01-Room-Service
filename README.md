@@ -47,13 +47,13 @@ Les routes qui agissent au nom d'un utilisateur reçoivent le JWT final du **ser
 
 Pour chaque action protégée, il appelle `GET /api/auth/me` du service Auth. Auth valide la signature, l'expiration et `version_auth`, recharge l'utilisateur dans PostgreSQL et retourne son rôle courant. Les changements de rôle, suppressions de compte et révocations sont donc pris en compte sans recopier le rôle dans le JWT.
 
-En intégration Docker locale, le service Auth peut être joint en HTTP sur un réseau de développement. En production (`NODE_ENV=production`), `AUTH_SERVICE_URL` doit obligatoirement utiliser `https://`; le Rooms Service refuse de démarrer avec une URL Auth non sécurisée.
+En intégration Docker locale, le service Auth peut être joint en HTTP sur un réseau de développement. `AUTH_SERVICE_URL` doit désigner uniquement l’origine du service Auth (par exemple `http://auth-service:3001`), sans chemin, paramètres de requête ni fragment. En production (`NODE_ENV=production`), cette URL doit obligatoirement utiliser `https://`; le Rooms Service refuse de démarrer avec une configuration Auth invalide ou non sécurisée.
 
 Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai configuré par `AUTH_TIMEOUT_MS` (3 000 ms par défaut), Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes. Une réponse Auth 2xx au format JSON invalide est traitée comme une erreur 502 (réponse incorrecte du service en amont), tandis qu’une indisponibilité réseau ou un 5xx Auth reste une erreur 503. Les journaux distinguent un dépassement du délai configuré d’une erreur réseau afin de faciliter le diagnostic.
 
 Sous Node.js 22, le `fetch` natif s’appuie sur le dispatcher global d’Undici, qui réutilise les connexions HTTP. Aucun pool HTTP supplémentaire n’est donc configuré dans le Room-Service.
 
-Un `RoomAuthGuard` NestJS protège le contrôleur Rooms par défaut. Seules les routes de lecture publique (`GET /api/rooms` et `GET /api/rooms/:id`) sont explicitement marquées publiques. Elles ne retournent que les salons publics; un identifiant de salon privé reçoit la même réponse 404 qu’un salon inexistant afin d’éviter l’énumération. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution du contrôleur, ce qui évite qu’une nouvelle route soit laissée publique par oubli.
+Un `RoomAuthGuard` NestJS est enregistré globalement via `APP_GUARD` : toute nouvelle route est donc protégée par défaut. Les exceptions doivent être explicitement marquées avec `@PublicRoute()`, notamment `GET /api/health`, `GET /api/rooms` et `GET /api/rooms/:id`. Les lectures Rooms publiques ne retournent que les salons publics; un identifiant de salon privé reçoit la même réponse 404 qu’un salon inexistant afin d’éviter l’énumération. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution des gestionnaires protégés.
 
 ## Routes
 
@@ -147,7 +147,7 @@ Il démarre :
 
 Pour tester les routes protégées, le service Auth doit aussi être disponible. Le chemin recommandé pour l'intégration complète est le `docker-compose.yml` global du dépôt Infra, qui démarre Auth, Rooms, Messages, PostgreSQL et Redis ensemble.
 
-En production, `CORS_ORIGINS` doit être défini explicitement et chaque entrée doit être une origine HTTP(S) valide, sans chemin (par exemple `https://app.example.com`). Les origines de boucle locale (`localhost`, `127.0.0.1` et `[::1]`) sont refusées en production. Le fallback `http://localhost:5173` dans le code est réservé aux environnements hors production; `compose.local.yml` fournit explicitement cette origine pour le conteneur local. `AUTH_SERVICE_URL` doit également utiliser HTTPS en production.
+En production, `CORS_ORIGINS` doit être défini explicitement et chaque entrée doit être une origine HTTP(S) valide, sans chemin, paramètres ni fragment (par exemple `https://app.example.com`). Les ports HTTP(S) par défaut explicites (`:80`/`:443`) sont normalisés vers l’origine canonique. Les origines de boucle locale (`localhost`, `127.0.0.1` et `[::1]`) sont refusées en production. Le fallback `http://localhost:5173` dans le code est réservé aux environnements hors production; `compose.local.yml` fournit explicitement cette origine pour le conteneur local. `AUTH_SERVICE_URL` doit également utiliser HTTPS en production.
 
 ## Variables d'environnement
 

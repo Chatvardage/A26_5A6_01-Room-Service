@@ -32,13 +32,23 @@ export function resolveAuthServiceUrl(): string {
   }
 
   if (
+    parsedUrl.pathname !== '/' ||
+    parsedUrl.search !== '' ||
+    parsedUrl.hash !== ''
+  ) {
+    throw new Error(
+      `AUTH_SERVICE_URL ne doit pas contenir de chemin ou paramètres : "${baseUrl}"`,
+    );
+  }
+
+  if (
     process.env.NODE_ENV === 'production' &&
     parsedUrl.protocol !== 'https:'
   ) {
     throw new Error('AUTH_SERVICE_URL doit utiliser HTTPS en production');
   }
 
-  return baseUrl;
+  return parsedUrl.origin;
 }
 
 export function resolveAuthTimeoutMs(): number {

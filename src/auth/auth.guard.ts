@@ -13,7 +13,7 @@ const PUBLIC_ROUTE_KEY = 'rooms:public-route';
 export const PublicRoute = () => SetMetadata(PUBLIC_ROUTE_KEY, true);
 
 export type AuthenticatedRequest = Request & {
-  user: AuthenticatedUser;
+  user?: AuthenticatedUser;
 };
 
 @Injectable()

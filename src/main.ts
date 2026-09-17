@@ -16,7 +16,11 @@ function validateCorsOrigin(origin: string): string {
     throw new Error(`Origine CORS invalide : ${origin}`);
   }
 
-  if (parsedOrigin.origin !== origin) {
+  if (
+    parsedOrigin.pathname !== '/' ||
+    parsedOrigin.search !== '' ||
+    parsedOrigin.hash !== ''
+  ) {
     throw new Error(`Origine CORS invalide : ${origin}`);
   }
 
@@ -28,7 +32,7 @@ function validateCorsOrigin(origin: string): string {
     throw new Error(`Origine CORS locale interdite en production : ${origin}`);
   }
 
-  return origin;
+  return parsedOrigin.origin;
 }
 
 export function resolvePort(): number {

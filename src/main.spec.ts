@@ -172,6 +172,15 @@ describe('bootstrap', () => {
     expect(main.resolveCorsOrigins()).toEqual(['https://app.example.test']);
   });
 
+  it('normalise un port HTTPS par défaut explicite', async () => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.CORS_ORIGINS = 'https://app.example.test:443';
+
+    expect(main.resolveCorsOrigins()).toEqual(['https://app.example.test']);
+  });
+
   it('refuse une origine CORS sans URL valide', async () => {
     const main = await import('./main');
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -202,6 +211,20 @@ describe('bootstrap', () => {
 
     expect(() => main.resolveCorsOrigins()).toThrow(
       'Origine CORS invalide : https://example.test/app',
+    );
+  });
+
+  it.each([
+    'https://example.test?tenant=chatvardage',
+    'https://example.test#fragment',
+  ])('refuse une origine CORS avec paramètres: %s', async (origin) => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.CORS_ORIGINS = origin;
+
+    expect(() => main.resolveCorsOrigins()).toThrow(
+      `Origine CORS invalide : ${origin}`,
     );
   });
 });

@@ -345,4 +345,16 @@ describe('AuthService', () => {
       'AUTH_SERVICE_URL doit être une URL valide',
     );
   });
+
+  it.each([
+    'http://auth-service:3001/v1',
+    'http://auth-service:3001?tenant=chatvardage',
+    'http://auth-service:3001#fragment',
+  ])('rejects AUTH_SERVICE_URL with path or parameters: %s', (url) => {
+    process.env.AUTH_SERVICE_URL = url;
+
+    expect(resolveAuthServiceUrl).toThrow(
+      `AUTH_SERVICE_URL ne doit pas contenir de chemin ou paramètres : "${url}"`,
+    );
+  });
 });

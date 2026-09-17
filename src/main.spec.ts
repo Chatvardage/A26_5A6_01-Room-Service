@@ -15,7 +15,7 @@ const builder = {
   setTitle: jest.fn().mockReturnThis(),
   setDescription: jest.fn().mockReturnThis(),
   setVersion: jest.fn().mockReturnThis(),
-  addApiKey: jest.fn().mockReturnThis(),
+  addBearerAuth: jest.fn().mockReturnThis(),
   build,
 };
 
@@ -30,6 +30,7 @@ jest.mock('@nestjs/swagger', () => ({
   ApiTags: decorator,
   ApiOperation: decorator,
   ApiHeader: decorator,
+  ApiBearerAuth: decorator,
   ApiNoContentResponse: decorator,
   ApiProperty: decorator,
   ApiPropertyOptional: decorator,
@@ -52,7 +53,11 @@ describe('bootstrap', () => {
     expect(builder.setTitle).toHaveBeenCalledWith('Chatvardage Rooms Service');
     expect(builder.setDescription).toHaveBeenCalled();
     expect(builder.setVersion).toHaveBeenCalledWith('2.0.0');
-    expect(builder.addApiKey).toHaveBeenCalledTimes(2);
+    expect(builder.addBearerAuth).toHaveBeenCalledWith({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+    });
     expect(build).toHaveBeenCalled();
     expect(listen).toHaveBeenCalledWith(3999, '0.0.0.0');
   });

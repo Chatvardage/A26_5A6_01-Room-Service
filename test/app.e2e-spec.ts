@@ -1,11 +1,11 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Rooms Service (e2e)', () => {
   let app: INestApplication;
+  let baseUrl: string;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -24,16 +24,16 @@ describe('Rooms Service (e2e)', () => {
         transform: true,
       }),
     );
-    await app.init();
+    await app.listen(0, '127.0.0.1');
+    baseUrl = await app.getUrl();
   });
 
   afterEach(async () => app.close());
 
   it('GET /api/health', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/api/health')
-      .expect(200);
-    expect(response.body).toEqual(
+    const response = await fetch(`${baseUrl}/api/health`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(
       expect.objectContaining({
         status: 'ok',
         service: 'rooms-service',
@@ -42,9 +42,12 @@ describe('Rooms Service (e2e)', () => {
     );
   });
 
-  it('POST /api/rooms exige une identité authentifiée', () =>
-    request(app.getHttpServer())
-      .post('/api/rooms')
-      .send({ nom: 'general', visibilite: 'public' })
-      .expect(401));
+  it('POST /api/rooms exige une identité authentifiée', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nom: 'general', visibilite: 'public' }),
+    });
+    expect(response.status).toBe(401);
+  });
 });

@@ -53,8 +53,7 @@ Le service est destiné à être appelé derrière `Serveur-API`.
 Le Gateway transmet l'identité déjà validée avec :
 
 ```http
-x-user-id: <user-id>
-x-user-role: user | moderator | admin
+Authorization: Bearer <JWT>
 ```
 
 Ne jamais considérer ces en-têtes comme sûrs si le service devient directement exposé à Internet. Dans l'architecture finale, le Room-Service doit rester un service interne.

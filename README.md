@@ -43,16 +43,11 @@ Le modèle retourné par l'API reste compatible avec le modèle `Salon` du clien
 
 ## Authentification entre services
 
-L'authentification est effectuée par le **Auth/User Service** et l'API Gateway.
+Les routes qui agissent au nom d'un utilisateur reçoivent le JWT final du **service Auth** dans `Authorization: Bearer <jeton>`. Le Rooms Service ne fait confiance à aucun en-tête `x-user-id` ou `x-user-role` fourni par le client.
 
-Le Rooms Service reçoit l'identité validée dans les en-têtes internes :
+Pour chaque action protégée, il appelle `GET /api/auth/me` du service Auth. Auth valide la signature, l'expiration et `version_auth`, recharge l'utilisateur dans PostgreSQL et retourne son rôle courant. Les changements de rôle, suppressions de compte et révocations sont donc pris en compte sans recopier le rôle dans le JWT.
 
-```http
-x-user-id: <id utilisateur>
-x-user-role: user | moderator | admin
-```
-
-En production, le Rooms Service ne doit pas être exposé directement à Internet. Ces en-têtes doivent être ajoutés par l'API Gateway après validation du JWT.
+En Docker global, `AUTH_SERVICE_URL=http://auth-service:3001`.
 
 ## Routes
 
@@ -86,6 +81,27 @@ Toutes les routes sont préfixées par `/api`.
 
 Prérequis : Node.js 22 et PostgreSQL, ou Docker.
 
+### Option recommandée : Docker
+
+Pour tester le service sans configuration PostgreSQL manuelle :
+
+```bash
+docker compose -f compose.local.yml up --build
+```
+
+Le Compose local crée une base `chatvardage_rooms` avec l'utilisateur `room_service`, exactement comme `.env.example`.
+
+### Option Node.js + PostgreSQL local
+
+Avant de démarrer le service, PostgreSQL doit contenir la base et le rôle correspondant à `.env.example` :
+
+```sql
+CREATE ROLE room_service WITH LOGIN PASSWORD 'room_service_dev';
+CREATE DATABASE chatvardage_rooms OWNER room_service;
+```
+
+Puis :
+
 ```bash
 npm install
 cp .env.example .env
@@ -93,6 +109,8 @@ npx prisma generate
 npx prisma migrate deploy
 npm run start:dev
 ```
+
+Les scripts `start` et `start:dev` chargent explicitement `.env`; il faut donc créer ce fichier avant de les lancer.
 
 Le service écoute par défaut sur :
 
@@ -119,13 +137,15 @@ Il démarre :
 - `rooms-service` sur le port `3003`;
 - PostgreSQL sur le port `5432`.
 
-Dans l'environnement final de l'équipe, ce service doit plutôt être référencé depuis le `docker-compose.yml` global avec les autres microservices et Redis.
+Pour tester les routes protégées, le service Auth doit aussi être disponible. Le chemin recommandé pour l'intégration complète est le `docker-compose.yml` global du dépôt Infra, qui démarre Auth, Rooms, Messages, PostgreSQL et Redis ensemble.
 
 ## Variables d'environnement
 
 ```env
 PORT=3003
 DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvardage_rooms?schema=public"
+AUTH_SERVICE_URL="http://localhost:3001"
+CORS_ORIGINS="http://localhost:5173"
 ```
 
 ## Exemple — créer un salon
@@ -133,7 +153,7 @@ DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvard
 ```bash
 curl -X POST http://localhost:3003/api/rooms \
   -H "Content-Type: application/json" \
-  -H "x-user-id: user-1" \
+  -H "Authorization: Bearer <JWT_USER_1>" \
   -d '{"nom":"general","visibilite":"public"}'
 ```
 
@@ -158,7 +178,7 @@ Créer le salon :
 ```bash
 curl -X POST http://localhost:3003/api/rooms \
   -H "Content-Type: application/json" \
-  -H "x-user-id: user-1" \
+  -H "Authorization: Bearer <JWT_USER_1>" \
   -d '{"nom":"equipe-privee","visibilite":"prive"}'
 ```
 
@@ -167,7 +187,7 @@ Inviter un utilisateur :
 ```bash
 curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations \
   -H "Content-Type: application/json" \
-  -H "x-user-id: user-1" \
+  -H "Authorization: Bearer <JWT_USER_1>" \
   -d '{"utilisateurId":"user-2"}'
 ```
 
@@ -175,7 +195,7 @@ Accepter l'invitation avec `user-2` :
 
 ```bash
 curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations/accept \
-  -H "x-user-id: user-2"
+  -H "Authorization: Bearer <JWT_USER_2>"
 ```
 
 ## Base de données

@@ -1,9 +1,10 @@
-import { UnauthorizedException } from '@nestjs/common';
 import { RoomsController } from './rooms.controller';
 
 describe('RoomsController', () => {
   let c: RoomsController;
   let s: any;
+  let auth: any;
+  const user = { id: 'u', role: 'utilisateur' };
   beforeEach(() => {
     s = Object.fromEntries(
       [
@@ -20,7 +21,8 @@ describe('RoomsController', () => {
         'leave',
       ].map((k) => [k, jest.fn().mockResolvedValue(k)]),
     );
-    c = new RoomsController(s);
+    auth = { authenticate: jest.fn().mockResolvedValue(user) };
+    c = new RoomsController(s, auth);
   });
   it('findAll', () => {
     c.findAll();
@@ -30,55 +32,42 @@ describe('RoomsController', () => {
     c.findOne('r');
     expect(s.findOne).toHaveBeenCalledWith('r');
   });
-  it('findMyInvitations', () => {
-    c.findMyInvitations('u');
+  it('findMyInvitations', async () => {
+    await c.findMyInvitations('Bearer t');
+    expect(auth.authenticate).toHaveBeenCalledWith('Bearer t');
     expect(s.findInvitationsForUser).toHaveBeenCalledWith('u');
   });
-  it('create', () => {
-    c.create({ nom: 'x' }, 'u');
+  it('create', async () => {
+    await c.create({ nom: 'x' }, 'Bearer t');
     expect(s.create).toHaveBeenCalledWith({ nom: 'x' }, 'u');
   });
-  it('update défaut role user', () => {
-    c.update('r', { nom: 'x' }, 'u');
-    expect(s.update).toHaveBeenCalledWith('r', { nom: 'x' }, 'u', 'user');
+  it('update uses current role from Auth', async () => {
+    auth.authenticate.mockResolvedValue({ id: 'u', role: 'admin' });
+    await c.update('r', { nom: 'x' }, 'Bearer t');
+    expect(s.update).toHaveBeenCalledWith('r', { nom: 'x' }, 'u', 'admin');
   });
-  it('update role fourni', () => {
-    c.update('r', {}, 'u', 'admin');
-    expect(s.update).toHaveBeenCalledWith('r', {}, 'u', 'admin');
+  it('remove', async () => {
+    await c.remove('r', 'Bearer t');
+    expect(s.remove).toHaveBeenCalledWith('r', 'u', 'utilisateur');
   });
-  it('remove défaut role user', async () => {
-    await c.remove('r', 'u');
-    expect(s.remove).toHaveBeenCalledWith('r', 'u', 'user');
+  it('invite', async () => {
+    await c.invite('r', { utilisateurId: 'v' }, 'Bearer t');
+    expect(s.invite).toHaveBeenCalledWith('r', 'v', 'u', 'utilisateur');
   });
-  it('remove role fourni', async () => {
-    await c.remove('r', 'u', 'admin');
-    expect(s.remove).toHaveBeenCalledWith('r', 'u', 'admin');
-  });
-  it('invite', () => {
-    c.invite('r', { utilisateurId: 'v' }, 'u');
-    expect(s.invite).toHaveBeenCalledWith('r', 'v', 'u', 'user');
-  });
-  it('invite admin', () => {
-    c.invite('r', { utilisateurId: 'v' }, 'u', 'admin');
-    expect(s.invite).toHaveBeenCalledWith('r', 'v', 'u', 'admin');
-  });
-  it('accept', () => {
-    c.acceptInvitation('r', 'u');
+  it('accept', async () => {
+    await c.acceptInvitation('r', 'Bearer t');
     expect(s.acceptInvitation).toHaveBeenCalledWith('r', 'u');
   });
-  it('refuse', () => {
-    c.refuseInvitation('r', 'u');
+  it('refuse', async () => {
+    await c.refuseInvitation('r', 'Bearer t');
     expect(s.refuseInvitation).toHaveBeenCalledWith('r', 'u');
   });
-  it('join', () => {
-    c.join('r', 'u');
+  it('join', async () => {
+    await c.join('r', 'Bearer t');
     expect(s.join).toHaveBeenCalledWith('r', 'u');
   });
-  it('leave', () => {
-    c.leave('r', 'u');
+  it('leave', async () => {
+    await c.leave('r', 'Bearer t');
     expect(s.leave).toHaveBeenCalledWith('r', 'u');
-  });
-  it.each([undefined, '', '   '])('refuse identité invalide %p', (id) => {
-    expect(() => c.create({ nom: 'x' }, id)).toThrow(UnauthorizedException);
   });
 });

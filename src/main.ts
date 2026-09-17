@@ -7,7 +7,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
-  app.enableCors();
+  const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.enableCors({ origin: origins, credentials: false });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -20,17 +24,13 @@ async function bootstrap() {
     .setTitle('Chatvardage Rooms Service')
     .setDescription('API de gestion des salons de Chatvardage')
     .setVersion('2.0.0')
-    .addApiKey({ type: 'apiKey', in: 'header', name: 'x-user-id' }, 'x-user-id')
-    .addApiKey(
-      { type: 'apiKey', in: 'header', name: 'x-user-role' },
-      'x-user-role',
-    )
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document);
 
-  const port = Number({ PORT: '3003', ...process.env }.PORT);
+  const port = Number(process.env.PORT ?? 3003);
   await app.listen(port, '0.0.0.0');
 }
 

@@ -20,6 +20,14 @@ function validateCorsOrigin(origin: string): string {
     throw new Error(`Origine CORS invalide : ${origin}`);
   }
 
+  const loopbackHost = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(
+    parsedOrigin.hostname,
+  );
+
+  if (process.env.NODE_ENV === 'production' && loopbackHost) {
+    throw new Error(`Origine CORS locale interdite en production : ${origin}`);
+  }
+
   return origin;
 }
 

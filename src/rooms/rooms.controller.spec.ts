@@ -1,12 +1,24 @@
+import { Reflector } from '@nestjs/core';
+import type { AuthenticatedRequest } from '../auth/auth.guard';
 import { RoomsController } from './rooms.controller';
 
 describe('RoomsController', () => {
-  let c: RoomsController;
-  let s: any;
-  let auth: any;
-  const user = { id: 'u', role: 'utilisateur' };
+  let controller: RoomsController;
+  let roomsService: Record<string, jest.Mock>;
+
+  const request = {
+    user: {
+      id: 'u',
+      pseudo: 'user',
+      courriel: 'u@example.test',
+      role: 'utilisateur',
+      cree_le: '2026-01-01T00:00:00.000Z',
+      modifie_le: '2026-01-01T00:00:00.000Z',
+    },
+  } as AuthenticatedRequest;
+
   beforeEach(() => {
-    s = Object.fromEntries(
+    roomsService = Object.fromEntries(
       [
         'findAll',
         'findOne',
@@ -19,55 +31,106 @@ describe('RoomsController', () => {
         'refuseInvitation',
         'join',
         'leave',
-      ].map((k) => [k, jest.fn().mockResolvedValue(k)]),
+      ].map((key) => [key, jest.fn().mockResolvedValue(key)]),
     );
-    auth = { authenticate: jest.fn().mockResolvedValue(user) };
-    c = new RoomsController(s, auth);
+
+    controller = new RoomsController(roomsService as never);
   });
+
+  it('marks only the intended read routes as public', () => {
+    const reflector = new Reflector();
+
+    // Nest attache les métadonnées à la fonction originale du prototype.
+    // Ces références non liées sont donc intentionnelles pour Reflector.get().
+    /* eslint-disable @typescript-eslint/unbound-method */
+    expect(
+      reflector.get<boolean>(
+        'rooms:public-route',
+        RoomsController.prototype.findAll,
+      ),
+    ).toBe(true);
+    expect(
+      reflector.get<boolean>(
+        'rooms:public-route',
+        RoomsController.prototype.findOne,
+      ),
+    ).toBe(true);
+    expect(
+      reflector.get<boolean>(
+        'rooms:public-route',
+        RoomsController.prototype.create,
+      ),
+    ).toBeUndefined();
+    /* eslint-enable @typescript-eslint/unbound-method */
+  });
+
   it('findAll', () => {
-    c.findAll();
-    expect(s.findAll).toHaveBeenCalled();
+    controller.findAll();
+    expect(roomsService.findAll).toHaveBeenCalled();
   });
+
   it('findOne', () => {
-    c.findOne('r');
-    expect(s.findOne).toHaveBeenCalledWith('r');
+    controller.findOne('r');
+    expect(roomsService.findOne).toHaveBeenCalledWith('r');
   });
-  it('findMyInvitations', async () => {
-    await c.findMyInvitations('Bearer t');
-    expect(auth.authenticate).toHaveBeenCalledWith('Bearer t');
-    expect(s.findInvitationsForUser).toHaveBeenCalledWith('u');
+
+  it('findMyInvitations', () => {
+    controller.findMyInvitations(request);
+    expect(roomsService.findInvitationsForUser).toHaveBeenCalledWith('u');
   });
-  it('create', async () => {
-    await c.create({ nom: 'x' }, 'Bearer t');
-    expect(s.create).toHaveBeenCalledWith({ nom: 'x' }, 'u');
+
+  it('create', () => {
+    controller.create({ nom: 'x' }, request);
+    expect(roomsService.create).toHaveBeenCalledWith({ nom: 'x' }, 'u');
   });
-  it('update uses current role from Auth', async () => {
-    auth.authenticate.mockResolvedValue({ id: 'u', role: 'admin' });
-    await c.update('r', { nom: 'x' }, 'Bearer t');
-    expect(s.update).toHaveBeenCalledWith('r', { nom: 'x' }, 'u', 'admin');
+
+  it('update uses the current role attached by AuthGuard', () => {
+    const adminRequest = {
+      ...request,
+      user: { ...request.user, role: 'admin' as const },
+    } as AuthenticatedRequest;
+
+    controller.update('r', { nom: 'x' }, adminRequest);
+    expect(roomsService.update).toHaveBeenCalledWith(
+      'r',
+      { nom: 'x' },
+      'u',
+      'admin',
+    );
   });
+
   it('remove', async () => {
-    await c.remove('r', 'Bearer t');
-    expect(s.remove).toHaveBeenCalledWith('r', 'u', 'utilisateur');
+    await controller.remove('r', request);
+    expect(roomsService.remove).toHaveBeenCalledWith('r', 'u', 'utilisateur');
   });
-  it('invite', async () => {
-    await c.invite('r', { utilisateurId: 'v' }, 'Bearer t');
-    expect(s.invite).toHaveBeenCalledWith('r', 'v', 'u', 'utilisateur');
+
+  it('invite', () => {
+    controller.invite('r', { utilisateurId: 'v' }, request);
+    expect(roomsService.invite).toHaveBeenCalledWith(
+      'r',
+      'v',
+      'u',
+      'utilisateur',
+    );
   });
-  it('accept', async () => {
-    await c.acceptInvitation('r', 'Bearer t');
-    expect(s.acceptInvitation).toHaveBeenCalledWith('r', 'u');
+
+  it('accept', () => {
+    controller.acceptInvitation('r', request);
+    expect(roomsService.acceptInvitation).toHaveBeenCalledWith('r', 'u');
   });
-  it('refuse', async () => {
-    await c.refuseInvitation('r', 'Bearer t');
-    expect(s.refuseInvitation).toHaveBeenCalledWith('r', 'u');
+
+  it('refuse', () => {
+    controller.refuseInvitation('r', request);
+    expect(roomsService.refuseInvitation).toHaveBeenCalledWith('r', 'u');
   });
-  it('join', async () => {
-    await c.join('r', 'Bearer t');
-    expect(s.join).toHaveBeenCalledWith('r', 'u');
+
+  it('join', () => {
+    controller.join('r', request);
+    expect(roomsService.join).toHaveBeenCalledWith('r', 'u');
   });
-  it('leave', async () => {
-    await c.leave('r', 'Bearer t');
-    expect(s.leave).toHaveBeenCalledWith('r', 'u');
+
+  it('leave', () => {
+    controller.leave('r', request);
+    expect(roomsService.leave).toHaveBeenCalledWith('r', 'u');
   });
 });

@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -42,6 +43,7 @@ export function resolveAuthServiceUrl(): string {
 @Injectable()
 export class AuthService {
   private readonly baseUrl: string;
+  private readonly logger = new Logger(AuthService.name);
 
   constructor() {
     this.baseUrl = resolveAuthServiceUrl();
@@ -63,7 +65,17 @@ export class AuthService {
         headers: { Authorization: normalizedAuthorization },
         signal: AbortSignal.timeout(3000),
       });
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        this.logger.warn(
+          'Délai dépassé lors de la validation auprès du service Auth',
+        );
+      } else {
+        this.logger.error(
+          'Erreur réseau lors de la validation auprès du service Auth',
+        );
+      }
+
       throw new ServiceUnavailableException(
         "Service d'authentification indisponible",
       );

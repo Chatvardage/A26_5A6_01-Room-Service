@@ -9,6 +9,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
       - "3003:3003"
+    # Linux Docker Engine 20.10+ requis pour la valeur spéciale host-gateway.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

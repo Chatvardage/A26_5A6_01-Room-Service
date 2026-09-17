@@ -37,6 +37,7 @@ jest.mock('@nestjs/swagger', () => ({
   ApiPropertyOptional: decorator,
 }));
 
+// main.ts lance bootstrap à l'import; NestFactory est mocké avant les imports dynamiques.
 describe('bootstrap', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
@@ -51,7 +52,11 @@ describe('bootstrap', () => {
   afterEach(() => {
     delete process.env.PORT;
     delete process.env.CORS_ORIGINS;
-    process.env.NODE_ENV = originalNodeEnv;
+    if (originalNodeEnv !== undefined) {
+      process.env.NODE_ENV = originalNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
   });
 
   it('configure et démarre sur PORT', async () => {
@@ -121,6 +126,32 @@ describe('bootstrap', () => {
     expect(() => main.resolveCorsOrigins()).toThrow(
       'CORS_ORIGINS doit être défini en production',
     );
+  });
+
+  it.each([
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://[::1]:3000',
+  ])('refuse une origine CORS locale en production: %s', async (origin) => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.NODE_ENV = 'production';
+    process.env.CORS_ORIGINS = origin;
+
+    expect(() => main.resolveCorsOrigins()).toThrow(
+      `Origine CORS locale interdite en production : ${origin}`,
+    );
+  });
+
+  it('accepte une origine distante valide en production', async () => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.NODE_ENV = 'production';
+    process.env.CORS_ORIGINS = 'https://app.example.test';
+
+    expect(main.resolveCorsOrigins()).toEqual(['https://app.example.test']);
   });
 
   it('refuse une origine CORS sans URL valide', async () => {

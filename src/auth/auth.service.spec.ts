@@ -1,5 +1,6 @@
 import {
   ForbiddenException,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -12,7 +13,12 @@ describe('AuthService', () => {
   afterEach(() => {
     global.fetch = originalFetch;
     delete process.env.AUTH_SERVICE_URL;
-    process.env.NODE_ENV = originalNodeEnv;
+    if (originalNodeEnv !== undefined) {
+      process.env.NODE_ENV = originalNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+    jest.restoreAllMocks();
   });
 
   it('requires a bearer token', async () => {
@@ -198,12 +204,42 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
-  it('maps network failures to unavailable', async () => {
+  it('logs network failures and maps them to unavailable', async () => {
+    const errorLog = jest.spyOn(Logger.prototype, 'error').mockImplementation();
     global.fetch = jest.fn().mockRejectedValue(new Error('network'));
 
     await expect(
       new AuthService().authenticate('Bearer jwt'),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(errorLog).toHaveBeenCalledWith(
+      'Erreur réseau lors de la validation auprès du service Auth',
+    );
+  });
+
+  it('logs Auth timeouts separately and maps them to unavailable', async () => {
+    const warningLog = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation();
+    const timeout = new Error('timeout');
+    timeout.name = 'TimeoutError';
+    global.fetch = jest.fn().mockRejectedValue(timeout);
+
+    await expect(
+      new AuthService().authenticate('Bearer jwt'),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(warningLog).toHaveBeenCalledWith(
+      'Délai dépassé lors de la validation auprès du service Auth',
+    );
+  });
+
+  it('handles non-Error network rejections', async () => {
+    const errorLog = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    global.fetch = jest.fn().mockRejectedValue('network');
+
+    await expect(
+      new AuthService().authenticate('Bearer jwt'),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(errorLog).toHaveBeenCalled();
   });
 
   it('maps a non-JSON Auth response to unavailable', async () => {

@@ -52,11 +52,13 @@ export function resolveAuthServiceUrl(): string {
 
 export function resolveAuthTimeoutMs(): number {
   const rawTimeout = process.env.AUTH_TIMEOUT_MS ?? '3000';
-  const timeoutMs = Number(rawTimeout);
+  const normalizedTimeout = rawTimeout.trim();
 
-  if (!Number.isInteger(timeoutMs)) {
+  if (!/^\d+$/.test(normalizedTimeout)) {
     throw new Error(`AUTH_TIMEOUT_MS doit être un entier : "${rawTimeout}"`);
   }
+
+  const timeoutMs = Number(normalizedTimeout);
 
   if (timeoutMs <= 0) {
     throw new Error(
@@ -90,7 +92,7 @@ export class AuthService {
     let response: Response;
 
     try {
-      response = await fetch(`${this.baseUrl}/api/auth/me`, {
+      response = await fetch(new URL('/api/auth/me', this.baseUrl).toString(), {
         headers: { Authorization: normalizedAuthorization },
         signal: AbortSignal.timeout(this.timeoutMs),
       });

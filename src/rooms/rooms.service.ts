@@ -30,9 +30,12 @@ export class RoomsService {
   }
 
   async findPublicOne(id: string): Promise<RoomResponse> {
-    const room = await this.getRoomOrThrow(id);
+    const room = await this.prisma.room.findFirst({
+      where: { id, visibility: 'public' },
+      include: roomInclude,
+    });
 
-    if (room.visibility !== 'public') {
+    if (!room) {
       throw new NotFoundException(`Salon ${id} non trouvé`);
     }
 

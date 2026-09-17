@@ -308,11 +308,19 @@ describe('AuthService', () => {
     expect(resolveAuthTimeoutMs()).toBe(4500);
   });
 
-  it('rejects a non-integer Auth timeout', () => {
-    process.env.AUTH_TIMEOUT_MS = 'abc';
-    expect(resolveAuthTimeoutMs).toThrow(
-      'AUTH_TIMEOUT_MS doit être un entier : "abc"',
-    );
+  it.each(['abc', '3000.0', '3e3', ''])(
+    'rejects a non-integer Auth timeout: %s',
+    (timeout) => {
+      process.env.AUTH_TIMEOUT_MS = timeout;
+      expect(resolveAuthTimeoutMs).toThrow(
+        `AUTH_TIMEOUT_MS doit être un entier : "${timeout}"`,
+      );
+    },
+  );
+
+  it('normalizes whitespace around AUTH_TIMEOUT_MS', () => {
+    process.env.AUTH_TIMEOUT_MS = ' 4500 ';
+    expect(resolveAuthTimeoutMs()).toBe(4500);
   });
 
   it('rejects a non-positive Auth timeout', () => {

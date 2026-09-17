@@ -91,12 +91,25 @@ describe('bootstrap', () => {
     expect(listen).toHaveBeenCalledWith(3003, '0.0.0.0');
   });
 
-  it('refuse un PORT non numérique', async () => {
+  it.each(['abc', '3003.0', '3e3'])(
+    'refuse un PORT au format invalide: %s',
+    async (port) => {
+      const main = await import('./main');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      process.env.PORT = port;
+      expect(() => main.resolvePort()).toThrow(
+        `Variable PORT invalide : "${port}"`,
+      );
+    },
+  );
+
+  it('normalise les espaces autour de PORT', async () => {
     const main = await import('./main');
     await new Promise<void>((resolve) => setImmediate(resolve));
 
-    process.env.PORT = 'abc';
-    expect(() => main.resolvePort()).toThrow('Variable PORT invalide : "abc"');
+    process.env.PORT = ' 3003 ';
+    expect(main.resolvePort()).toBe(3003);
   });
 
   it('refuse un PORT vide comme invalide', async () => {

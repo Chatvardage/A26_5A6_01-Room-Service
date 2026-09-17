@@ -26,6 +26,7 @@ describe('RoomsService', () => {
     prisma = {
       room: {
         findMany: jest.fn(),
+        findFirst: jest.fn(),
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
@@ -47,15 +48,21 @@ describe('RoomsService', () => {
       expect.objectContaining({ where: { visibility: 'public' } }),
     );
   });
-  it('findPublicOne retourne un salon public', async () => {
-    prisma.room.findUnique.mockResolvedValue(makeRoom());
+  it('findPublicOne filtre le salon public directement en base', async () => {
+    prisma.room.findFirst.mockResolvedValue(makeRoom());
+
     await expect(service.findPublicOne('room-1')).resolves.toEqual(
       expect.objectContaining({ id: 'room-1' }),
     );
+    expect(prisma.room.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'room-1', visibility: 'public' },
+      }),
+    );
   });
 
-  it('findPublicOne masque un salon privé avec un 404', async () => {
-    prisma.room.findUnique.mockResolvedValue(makeRoom({ visibility: 'prive' }));
+  it('findPublicOne masque un salon privé ou inexistant avec un 404', async () => {
+    prisma.room.findFirst.mockResolvedValue(null);
     await expect(service.findPublicOne('room-1')).rejects.toBeInstanceOf(
       NotFoundException,
     );

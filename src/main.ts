@@ -24,8 +24,9 @@ function validateCorsOrigin(origin: string): string {
     throw new Error(`Origine CORS invalide : ${origin}`);
   }
 
-  const loopbackHost = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/i.test(
-    parsedOrigin.hostname,
+  const normalizedHostname = parsedOrigin.hostname.replace(/^\[(.*)\]$/, '$1');
+  const loopbackHost = /^(localhost|127\.0\.0\.1|::1)$/i.test(
+    normalizedHostname,
   );
 
   if (process.env.NODE_ENV === 'production' && loopbackHost) {
@@ -37,16 +38,13 @@ function validateCorsOrigin(origin: string): string {
 
 export function resolvePort(): number {
   const rawPort = process.env.PORT ?? '3003';
+  const normalizedPort = rawPort.trim();
 
-  if (rawPort.trim() === '') {
+  if (!/^\d+$/.test(normalizedPort)) {
     throw new Error(`Variable PORT invalide : "${rawPort}"`);
   }
 
-  const port = Number(rawPort);
-
-  if (!Number.isInteger(port)) {
-    throw new Error(`Variable PORT invalide : "${rawPort}"`);
-  }
+  const port = Number(normalizedPort);
 
   if (port < 1 || port > 65535) {
     throw new Error(`Variable PORT hors plage : "${rawPort}"`);

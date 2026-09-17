@@ -95,4 +95,16 @@ describe('bootstrap', () => {
       credentials: false,
     });
   });
+
+  it('retombe sur localhost si CORS_ORIGINS est vide', async () => {
+    process.env.CORS_ORIGINS = '';
+
+    await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(app.enableCors).toHaveBeenCalledWith({
+      origin: ['http://localhost:5173'],
+      credentials: false,
+    });
+  });
 });

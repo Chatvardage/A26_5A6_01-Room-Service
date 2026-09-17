@@ -49,6 +49,8 @@ Pour chaque action protégée, il appelle `GET /api/auth/me` du service Auth. Au
 
 En Docker global, `AUTH_SERVICE_URL=http://auth-service:3001`.
 
+Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai de 3 s, Rooms Service retourne une erreur 503.
+
 ## Routes
 
 Toutes les routes sont préfixées par `/api`.

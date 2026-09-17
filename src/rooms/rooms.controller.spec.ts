@@ -22,7 +22,7 @@ describe('RoomsController', () => {
     roomsService = Object.fromEntries(
       [
         'findAll',
-        'findPublicOne',
+        'findAccessibleOne',
         'findOne',
         'findInvitationsForUser',
         'create',
@@ -39,7 +39,7 @@ describe('RoomsController', () => {
     controller = new RoomsController(roomsService as never);
   });
 
-  it('marks only the intended read routes as public', () => {
+  it('marks list as public, details as optional-auth, and writes as protected', () => {
     const reflector = new Reflector();
 
     // Nest attache les métadonnées à la fonction originale du prototype.
@@ -53,10 +53,16 @@ describe('RoomsController', () => {
     ).toBe(true);
     expect(
       reflector.get<boolean>(
-        'rooms:public-route',
+        'rooms:optional-auth-route',
         RoomsController.prototype.findOne,
       ),
     ).toBe(true);
+    expect(
+      reflector.get<boolean>(
+        'rooms:public-route',
+        RoomsController.prototype.findOne,
+      ),
+    ).toBeUndefined();
     expect(
       reflector.get<boolean>(
         'rooms:public-route',
@@ -71,9 +77,14 @@ describe('RoomsController', () => {
     expect(roomsService.findAll).toHaveBeenCalled();
   });
 
-  it('findOne', () => {
-    controller.findOne('r');
-    expect(roomsService.findPublicOne).toHaveBeenCalledWith('r');
+  it('findOne reste public sans identité', () => {
+    controller.findOne('r', {} as AuthenticatedRequest);
+    expect(roomsService.findAccessibleOne).toHaveBeenCalledWith('r', undefined);
+  });
+
+  it('findOne transmet l’identité quand le guard optionnel authentifie le client', () => {
+    controller.findOne('r', request);
+    expect(roomsService.findAccessibleOne).toHaveBeenCalledWith('r', 'u');
   });
 
   it('findMyInvitations', () => {

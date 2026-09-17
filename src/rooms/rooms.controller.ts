@@ -17,7 +17,11 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthenticatedRequest, PublicRoute } from '../auth/auth.guard';
+import {
+  AuthenticatedRequest,
+  OptionalAuthRoute,
+  PublicRoute,
+} from '../auth/auth.guard';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
@@ -54,10 +58,13 @@ export class RoomsController {
   }
 
   @Get(':id')
-  @PublicRoute()
-  @ApiOperation({ summary: 'Récupère un salon public par son identifiant' })
-  findOne(@Param('id') id: string) {
-    return this.roomsService.findPublicOne(id);
+  @OptionalAuthRoute()
+  @ApiOperation({
+    summary:
+      'Récupère un salon public ou un salon privé dont l’utilisateur est membre',
+  })
+  findOne(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.roomsService.findAccessibleOne(id, request.user?.id);
   }
 
   @Post()

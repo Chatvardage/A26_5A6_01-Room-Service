@@ -29,9 +29,18 @@ export class RoomsService {
     return rooms.map((room) => this.toResponse(room));
   }
 
-  async findPublicOne(id: string): Promise<RoomResponse> {
+  async findAccessibleOne(id: string, userId?: string): Promise<RoomResponse> {
+    const accessFilter = userId
+      ? {
+          OR: [
+            { visibility: 'public' as const },
+            { members: { some: { userId } } },
+          ],
+        }
+      : { visibility: 'public' as const };
+
     const room = await this.prisma.room.findFirst({
-      where: { id, visibility: 'public' },
+      where: { id, ...accessFilter },
       include: roomInclude,
     });
 

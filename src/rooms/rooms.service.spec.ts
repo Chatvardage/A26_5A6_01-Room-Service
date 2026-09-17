@@ -48,10 +48,10 @@ describe('RoomsService', () => {
       expect.objectContaining({ where: { visibility: 'public' } }),
     );
   });
-  it('findPublicOne filtre le salon public directement en base', async () => {
+  it('findAccessibleOne anonyme filtre directement sur les salons publics', async () => {
     prisma.room.findFirst.mockResolvedValue(makeRoom());
 
-    await expect(service.findPublicOne('room-1')).resolves.toEqual(
+    await expect(service.findAccessibleOne('room-1')).resolves.toEqual(
       expect.objectContaining({ id: 'room-1' }),
     );
     expect(prisma.room.findFirst).toHaveBeenCalledWith(
@@ -61,11 +61,37 @@ describe('RoomsService', () => {
     );
   });
 
-  it('findPublicOne masque un salon privé ou inexistant avec un 404', async () => {
-    prisma.room.findFirst.mockResolvedValue(null);
-    await expect(service.findPublicOne('room-1')).rejects.toBeInstanceOf(
-      NotFoundException,
+  it('findAccessibleOne authentifié autorise un salon privé dont il est membre', async () => {
+    prisma.room.findFirst.mockResolvedValue(
+      makeRoom({
+        visibility: 'prive',
+        members: [{ userId: 'user-2' }],
+      }),
     );
+
+    await expect(
+      service.findAccessibleOne('room-1', 'user-2'),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: 'room-1', visibilite: 'prive' }),
+    );
+    expect(prisma.room.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'room-1',
+          OR: [
+            { visibility: 'public' },
+            { members: { some: { userId: 'user-2' } } },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('findAccessibleOne masque un salon privé non accessible ou inexistant avec un 404', async () => {
+    prisma.room.findFirst.mockResolvedValue(null);
+    await expect(
+      service.findAccessibleOne('room-1', 'user-2'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('findOne retourne un salon pour les flux internes authentifiés', async () => {

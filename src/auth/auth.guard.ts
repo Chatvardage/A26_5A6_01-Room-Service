@@ -9,8 +9,11 @@ import type { Request } from 'express';
 import { AuthenticatedUser, AuthService } from './auth.service';
 
 const PUBLIC_ROUTE_KEY = 'rooms:public-route';
+const OPTIONAL_AUTH_ROUTE_KEY = 'rooms:optional-auth-route';
 
 export const PublicRoute = () => SetMetadata(PUBLIC_ROUTE_KEY, true);
+export const OptionalAuthRoute = () =>
+  SetMetadata(OPTIONAL_AUTH_ROUTE_KEY, true);
 
 export type AuthenticatedRequest = Request & {
   user?: AuthenticatedUser;
@@ -34,6 +37,15 @@ export class RoomAuthGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const isOptionalAuth = this.reflector.getAllAndOverride<boolean>(
+      OPTIONAL_AUTH_ROUTE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (isOptionalAuth && !request.headers.authorization) {
+      return true;
+    }
+
     request.user = await this.auth.authenticate(request.headers.authorization);
     return true;
   }

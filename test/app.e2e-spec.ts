@@ -14,7 +14,7 @@ describe('Rooms Service (e2e)', () => {
   let authService: { authenticate: jest.Mock };
   let prisma: {
     $queryRaw: jest.Mock;
-    room: { create: jest.Mock };
+    room: { create: jest.Mock; findFirst: jest.Mock };
   };
 
   const authenticatedUser = {
@@ -39,6 +39,35 @@ describe('Rooms Service (e2e)', () => {
     prisma = {
       $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
       room: {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
+          const isMemberLookup =
+            Array.isArray(where?.OR) &&
+            where.OR.some(
+              (condition: any) =>
+                condition?.members?.some?.userId === authenticatedUser.id,
+            );
+
+          if (where?.id !== 'private-e2e' || !isMemberLookup) {
+            return null;
+          }
+
+          return {
+            id: 'private-e2e',
+            name: 'secret',
+            visibility: 'prive',
+            ownerId: authenticatedUser.id,
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+            members: [
+              {
+                roomId: 'private-e2e',
+                userId: authenticatedUser.id,
+                joinedAt: new Date('2026-01-01T00:00:00.000Z'),
+              },
+            ],
+            invitations: [],
+          };
+        }),
         create: jest.fn().mockResolvedValue({
           id: 'room-e2e',
           name: 'general',
@@ -127,5 +156,28 @@ describe('Rooms Service (e2e)', () => {
         data: expect.objectContaining({ ownerId: authenticatedUser.id }),
       }),
     );
+  });
+
+  it('GET /api/rooms/:id masque un salon privé pour un client anonyme', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms/private-e2e`);
+
+    expect(response.status).toBe(404);
+    expect(authService.authenticate).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/rooms/:id permet à un membre authentifié de relire son salon privé', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms/private-e2e`, {
+      headers: { authorization: 'Bearer valid-jwt' },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(
+      expect.objectContaining({
+        id: 'private-e2e',
+        nom: 'secret',
+        visibilite: 'prive',
+      }),
+    );
+    expect(authService.authenticate).toHaveBeenCalledWith('Bearer valid-jwt');
   });
 });

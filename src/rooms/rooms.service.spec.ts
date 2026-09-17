@@ -143,7 +143,7 @@ describe('RoomsService', () => {
       'room-1',
       { nom: ' equipe ', visibilite: 'prive' },
       'user-1',
-      'user',
+      'utilisateur',
     );
     expect(result.nom).toBe('equipe');
     expect(prisma.room.update).toHaveBeenCalledWith(
@@ -155,7 +155,7 @@ describe('RoomsService', () => {
   it('update accepte seulement le nom', async () => {
     prisma.room.findUnique.mockResolvedValue(makeRoom());
     prisma.room.update.mockResolvedValue(makeRoom({ name: 'x' }));
-    await service.update('room-1', { nom: 'x' }, 'user-1', 'user');
+    await service.update('room-1', { nom: 'x' }, 'user-1', 'utilisateur');
     expect(prisma.room.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { name: 'x' } }),
     );
@@ -163,7 +163,12 @@ describe('RoomsService', () => {
   it('update accepte seulement la visibilité', async () => {
     prisma.room.findUnique.mockResolvedValue(makeRoom());
     prisma.room.update.mockResolvedValue(makeRoom({ visibility: 'prive' }));
-    await service.update('room-1', { visibilite: 'prive' }, 'user-1', 'user');
+    await service.update(
+      'room-1',
+      { visibilite: 'prive' },
+      'user-1',
+      'utilisateur',
+    );
     expect(prisma.room.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { visibility: 'prive' } }),
     );
@@ -171,13 +176,13 @@ describe('RoomsService', () => {
   it('update refuse un DTO vide', async () => {
     prisma.room.findUnique.mockResolvedValue(makeRoom());
     await expect(
-      service.update('room-1', {}, 'user-1', 'user'),
+      service.update('room-1', {}, 'user-1', 'utilisateur'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
   it('update refuse un non-propriétaire non-admin', async () => {
     prisma.room.findUnique.mockResolvedValue(makeRoom());
     await expect(
-      service.update('room-1', { nom: 'x' }, 'user-2', 'user'),
+      service.update('room-1', { nom: 'x' }, 'user-2', 'utilisateur'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
   it('remove autorise admin et supprime', async () => {
@@ -191,7 +196,7 @@ describe('RoomsService', () => {
   it('invite refuse un salon public', async () => {
     prisma.room.findUnique.mockResolvedValue(makeRoom());
     await expect(
-      service.invite('room-1', 'user-2', 'user-1', 'user'),
+      service.invite('room-1', 'user-2', 'user-1', 'utilisateur'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
   it('invite retourne le salon si utilisateur déjà membre', async () => {
@@ -201,7 +206,7 @@ describe('RoomsService', () => {
     });
     prisma.room.findUnique.mockResolvedValue(room);
     await expect(
-      service.invite('room-1', 'user-2', 'user-1', 'user'),
+      service.invite('room-1', 'user-2', 'user-1', 'utilisateur'),
     ).resolves.toEqual(
       expect.objectContaining({ membreIds: ['user-1', 'user-2'] }),
     );
@@ -217,7 +222,12 @@ describe('RoomsService', () => {
       .mockResolvedValueOnce(before)
       .mockResolvedValueOnce(after);
     prisma.roomInvitation.create.mockResolvedValue({});
-    const result = await service.invite('room-1', 'user-2', 'user-1', 'user');
+    const result = await service.invite(
+      'room-1',
+      'user-2',
+      'user-1',
+      'utilisateur',
+    );
     expect(prisma.roomInvitation.create).toHaveBeenCalled();
     expect(result.membresInvites).toEqual(['user-2']);
   });
@@ -227,7 +237,7 @@ describe('RoomsService', () => {
       invitations: [{ userId: 'user-2' }],
     });
     prisma.room.findUnique.mockResolvedValue(room);
-    await service.invite('room-1', 'user-2', 'user-1', 'user');
+    await service.invite('room-1', 'user-2', 'user-1', 'utilisateur');
     expect(prisma.roomInvitation.create).not.toHaveBeenCalled();
   });
   it('acceptInvitation refuse sans invitation', async () => {

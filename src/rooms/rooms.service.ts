@@ -6,10 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { RoomVisibility } from '@prisma/client';
+import type { AuthenticatedUser } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomResponse } from './types/room-response.type';
+
+type ActorRole = AuthenticatedUser['role'];
 
 const roomInclude = {
   members: { orderBy: { joinedAt: 'asc' as const } },
@@ -82,7 +85,7 @@ export class RoomsService {
     id: string,
     dto: UpdateRoomDto,
     actorId: string,
-    actorRole: string,
+    actorRole: ActorRole,
   ): Promise<RoomResponse> {
     const current = await this.getRoomOrThrow(id);
     this.assertOwnerOrAdmin(current.ownerId, actorId, actorRole);
@@ -102,7 +105,11 @@ export class RoomsService {
     return this.toResponse(room);
   }
 
-  async remove(id: string, actorId: string, actorRole: string): Promise<void> {
+  async remove(
+    id: string,
+    actorId: string,
+    actorRole: ActorRole,
+  ): Promise<void> {
     const current = await this.getRoomOrThrow(id);
     this.assertOwnerOrAdmin(current.ownerId, actorId, actorRole);
     await this.prisma.room.delete({ where: { id } });
@@ -112,7 +119,7 @@ export class RoomsService {
     id: string,
     invitedUserId: string,
     actorId: string,
-    actorRole: string,
+    actorRole: ActorRole,
   ): Promise<RoomResponse> {
     const room = await this.getRoomOrThrow(id);
     this.assertOwnerOrAdmin(room.ownerId, actorId, actorRole);
@@ -241,7 +248,7 @@ export class RoomsService {
   private assertOwnerOrAdmin(
     ownerId: string,
     actorId: string,
-    actorRole: string,
+    actorRole: ActorRole,
   ): void {
     if (ownerId !== actorId && actorRole !== 'admin') {
       throw new ForbiddenException(

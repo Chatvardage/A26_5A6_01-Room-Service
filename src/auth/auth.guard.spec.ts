@@ -1,9 +1,9 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthGuard, AuthenticatedRequest } from './auth.guard';
+import { AuthenticatedRequest, RoomAuthGuard } from './auth.guard';
 import { AuthService, AuthenticatedUser } from './auth.service';
 
-describe('AuthGuard', () => {
+describe('RoomAuthGuard', () => {
   const user: AuthenticatedUser = {
     id: 'u1',
     pseudo: 'user',
@@ -36,7 +36,7 @@ describe('AuthGuard', () => {
 
   it('allows explicitly public routes without calling Auth', async () => {
     reflector.getAllAndOverride.mockReturnValue(true);
-    const guard = new AuthGuard(
+    const guard = new RoomAuthGuard(
       auth as unknown as AuthService,
       reflector as unknown as Reflector,
     );
@@ -46,7 +46,7 @@ describe('AuthGuard', () => {
   });
 
   it('authenticates protected routes and attaches the user to the request', async () => {
-    const guard = new AuthGuard(
+    const guard = new RoomAuthGuard(
       auth as unknown as AuthService,
       reflector as unknown as Reflector,
     );
@@ -62,7 +62,7 @@ describe('AuthGuard', () => {
 
   it('propagates authentication errors', async () => {
     auth.authenticate.mockRejectedValue(new UnauthorizedException('bad token'));
-    const guard = new AuthGuard(
+    const guard = new RoomAuthGuard(
       auth as unknown as AuthService,
       reflector as unknown as Reflector,
     );

@@ -91,6 +91,24 @@ describe('bootstrap', () => {
     expect(listen).toHaveBeenCalledWith(3003, '0.0.0.0');
   });
 
+  it('refuse un PORT non numérique', async () => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.PORT = 'abc';
+    expect(() => main.resolvePort()).toThrow('Variable PORT invalide : "abc"');
+  });
+
+  it.each(['0', '65536'])('refuse un PORT hors plage: %s', async (port) => {
+    const main = await import('./main');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    process.env.PORT = port;
+    expect(() => main.resolvePort()).toThrow(
+      `Variable PORT hors plage : "${port}"`,
+    );
+  });
+
   it('configure plusieurs origines CORS valides', async () => {
     process.env.CORS_ORIGINS =
       ' http://localhost:5173, https://app.example.test , ';

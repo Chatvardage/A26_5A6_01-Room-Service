@@ -19,7 +19,7 @@ import {
 } from '@nestjs/swagger';
 import {
   AuthenticatedRequest,
-  AuthGuard,
+  RoomAuthGuard,
   PublicRoute,
 } from '../auth/auth.guard';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -29,14 +29,14 @@ import { RoomsService } from './rooms.service';
 
 @ApiTags('Rooms')
 @ApiBearerAuth()
-@UseGuards(AuthGuard)
+@UseGuards(RoomAuthGuard)
 @Controller('rooms')
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
   @Get()
   @PublicRoute()
-  @ApiOperation({ summary: 'Récupère tous les salons' })
+  @ApiOperation({ summary: 'Récupère tous les salons publics' })
   findAll() {
     return this.roomsService.findAll();
   }
@@ -51,9 +51,9 @@ export class RoomsController {
 
   @Get(':id')
   @PublicRoute()
-  @ApiOperation({ summary: 'Récupère un salon par son identifiant' })
+  @ApiOperation({ summary: 'Récupère un salon public par son identifiant' })
   findOne(@Param('id') id: string) {
-    return this.roomsService.findOne(id);
+    return this.roomsService.findPublicOne(id);
   }
 
   @Post()

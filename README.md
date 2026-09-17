@@ -49,11 +49,11 @@ Pour chaque action protégée, il appelle `GET /api/auth/me` du service Auth. Au
 
 En intégration Docker locale, le service Auth peut être joint en HTTP sur un réseau de développement. En production (`NODE_ENV=production`), `AUTH_SERVICE_URL` doit obligatoirement utiliser `https://`; le Rooms Service refuse de démarrer avec une URL Auth non sécurisée.
 
-Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai de 3 s, Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes. Les journaux distinguent un dépassement du délai de 3 s d’une erreur réseau afin de faciliter le diagnostic.
+Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai configuré par `AUTH_TIMEOUT_MS` (3 000 ms par défaut), Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes. Une réponse Auth 2xx au format JSON invalide est traitée comme une erreur 502 (réponse incorrecte du service en amont), tandis qu’une indisponibilité réseau ou un 5xx Auth reste une erreur 503. Les journaux distinguent un dépassement du délai configuré d’une erreur réseau afin de faciliter le diagnostic.
 
 Sous Node.js 22, le `fetch` natif s’appuie sur le dispatcher global d’Undici, qui réutilise les connexions HTTP. Aucun pool HTTP supplémentaire n’est donc configuré dans le Room-Service.
 
-Un `AuthGuard` NestJS protège le contrôleur Rooms par défaut. Seules les routes de lecture publique (`GET /api/rooms` et `GET /api/rooms/:id`) sont explicitement marquées publiques. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution du contrôleur, ce qui évite qu’une nouvelle route soit laissée publique par oubli.
+Un `RoomAuthGuard` NestJS protège le contrôleur Rooms par défaut. Seules les routes de lecture publique (`GET /api/rooms` et `GET /api/rooms/:id`) sont explicitement marquées publiques. Elles ne retournent que les salons publics; un identifiant de salon privé reçoit la même réponse 404 qu’un salon inexistant afin d’éviter l’énumération. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution du contrôleur, ce qui évite qu’une nouvelle route soit laissée publique par oubli.
 
 ## Routes
 
@@ -61,8 +61,8 @@ Toutes les routes sont préfixées par `/api`.
 
 | Méthode | Route | Description |
 |---|---|---|
-| GET | `/api/rooms` | Liste des salons |
-| GET | `/api/rooms/:id` | Obtenir un salon |
+| GET | `/api/rooms` | Liste des salons publics |
+| GET | `/api/rooms/:id` | Obtenir un salon public |
 | POST | `/api/rooms` | Créer un salon |
 | PATCH | `/api/rooms/:id` | Modifier un salon |
 | DELETE | `/api/rooms/:id` | Supprimer un salon |
@@ -97,7 +97,7 @@ docker compose -f compose.local.yml up --build
 
 Le Compose local crée une base `chatvardage_rooms` avec l'utilisateur `room_service`, exactement comme `.env.example`.
 
-Par défaut, ce compose force `NODE_ENV=development`, cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire. Sous Linux, l'alias `host.docker.internal` repose sur `host-gateway`, disponible avec Docker Engine 20.10 ou plus récent.
+Par défaut, ce compose force `NODE_ENV=development`, cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL`, `AUTH_TIMEOUT_MS` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire. Sous Linux, l'alias `host.docker.internal` repose sur `host-gateway`, disponible avec Docker Engine 20.10 ou plus récent.
 
 ### Option Node.js + PostgreSQL local
 
@@ -156,6 +156,7 @@ NODE_ENV=development
 PORT=3003
 DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvardage_rooms?schema=public"
 AUTH_SERVICE_URL="http://localhost:3001"
+AUTH_TIMEOUT_MS=3000
 CORS_ORIGINS="http://localhost:5173"
 ```
 

@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -40,13 +41,32 @@ export function resolveAuthServiceUrl(): string {
   return baseUrl;
 }
 
+export function resolveAuthTimeoutMs(): number {
+  const rawTimeout = process.env.AUTH_TIMEOUT_MS ?? '3000';
+  const timeoutMs = Number(rawTimeout);
+
+  if (!Number.isInteger(timeoutMs)) {
+    throw new Error(`AUTH_TIMEOUT_MS doit être un entier : "${rawTimeout}"`);
+  }
+
+  if (timeoutMs <= 0) {
+    throw new Error(
+      `AUTH_TIMEOUT_MS doit être supérieur à 0 : "${rawTimeout}"`,
+    );
+  }
+
+  return timeoutMs;
+}
+
 @Injectable()
 export class AuthService {
   private readonly baseUrl: string;
   private readonly logger = new Logger(AuthService.name);
+  private readonly timeoutMs: number;
 
   constructor() {
     this.baseUrl = resolveAuthServiceUrl();
+    this.timeoutMs = resolveAuthTimeoutMs();
   }
 
   async authenticate(authorization?: string): Promise<AuthenticatedUser> {
@@ -63,7 +83,7 @@ export class AuthService {
     try {
       response = await fetch(`${this.baseUrl}/api/auth/me`, {
         headers: { Authorization: normalizedAuthorization },
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error: unknown) {
       if (error instanceof Error && error.name === 'TimeoutError') {
@@ -100,13 +120,13 @@ export class AuthService {
     try {
       payload = await response.json();
     } catch {
-      throw new ServiceUnavailableException(
+      throw new BadGatewayException(
         "Réponse invalide du service d'authentification : JSON illisible",
       );
     }
 
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      throw new ServiceUnavailableException(
+      throw new BadGatewayException(
         "Réponse invalide du service d'authentification : corps JSON non objet",
       );
     }
@@ -126,7 +146,7 @@ export class AuthService {
       typeof user.modifie_le !== 'string' ||
       user.modifie_le.trim() === ''
     ) {
-      throw new ServiceUnavailableException(
+      throw new BadGatewayException(
         "Réponse invalide du service d'authentification : champs utilisateur invalides",
       );
     }

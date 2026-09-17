@@ -31,6 +31,21 @@ function validateCorsOrigin(origin: string): string {
   return origin;
 }
 
+export function resolvePort(): number {
+  const rawPort = process.env.PORT ?? '3003';
+  const port = Number(rawPort);
+
+  if (!Number.isInteger(port)) {
+    throw new Error(`Variable PORT invalide : "${rawPort}"`);
+  }
+
+  if (port < 1 || port > 65535) {
+    throw new Error(`Variable PORT hors plage : "${rawPort}"`);
+  }
+
+  return port;
+}
+
 export function resolveCorsOrigins(): string[] {
   const configuredOrigins = (process.env.CORS_ORIGINS ?? '')
     .split(',')
@@ -72,7 +87,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document);
 
-  const port = Number(process.env.PORT ?? 3003);
+  const port = resolvePort();
   await app.listen(port, '0.0.0.0');
 }
 

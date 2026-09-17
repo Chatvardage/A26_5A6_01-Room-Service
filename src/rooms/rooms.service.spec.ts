@@ -38,16 +38,33 @@ describe('RoomsService', () => {
     service = new RoomsService(prisma as PrismaService);
   });
 
-  it('findAll mappe les salons', async () => {
+  it('findAll ne récupère que les salons publics', async () => {
     prisma.room.findMany.mockResolvedValue([makeRoom()]);
     await expect(service.findAll()).resolves.toEqual([
       expect.objectContaining({ nom: 'general', membreIds: ['user-1'] }),
     ]);
+    expect(prisma.room.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { visibility: 'public' } }),
+    );
   });
-  it('findOne retourne un salon', async () => {
+  it('findPublicOne retourne un salon public', async () => {
     prisma.room.findUnique.mockResolvedValue(makeRoom());
-    await expect(service.findOne('room-1')).resolves.toEqual(
+    await expect(service.findPublicOne('room-1')).resolves.toEqual(
       expect.objectContaining({ id: 'room-1' }),
+    );
+  });
+
+  it('findPublicOne masque un salon privé avec un 404', async () => {
+    prisma.room.findUnique.mockResolvedValue(makeRoom({ visibility: 'prive' }));
+    await expect(service.findPublicOne('room-1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('findOne retourne un salon pour les flux internes authentifiés', async () => {
+    prisma.room.findUnique.mockResolvedValue(makeRoom({ visibility: 'prive' }));
+    await expect(service.findOne('room-1')).resolves.toEqual(
+      expect.objectContaining({ id: 'room-1', visibilite: 'prive' }),
     );
   });
   it('findInvitationsForUser filtre et mappe', async () => {

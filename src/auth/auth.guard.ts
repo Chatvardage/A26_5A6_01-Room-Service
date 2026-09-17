@@ -17,7 +17,7 @@ export type AuthenticatedRequest = Request & {
 };
 
 @Injectable()
-export class AuthGuard implements CanActivate {
+export class RoomAuthGuard implements CanActivate {
   constructor(
     private readonly auth: AuthService,
     private readonly reflector: Reflector,

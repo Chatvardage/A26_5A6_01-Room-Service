@@ -1,10 +1,15 @@
 import {
+  BadGatewayException,
   ForbiddenException,
   Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuthService, resolveAuthServiceUrl } from './auth.service';
+import {
+  AuthService,
+  resolveAuthServiceUrl,
+  resolveAuthTimeoutMs,
+} from './auth.service';
 
 describe('AuthService', () => {
   const originalFetch = global.fetch;
@@ -13,6 +18,7 @@ describe('AuthService', () => {
   afterEach(() => {
     global.fetch = originalFetch;
     delete process.env.AUTH_SERVICE_URL;
+    delete process.env.AUTH_TIMEOUT_MS;
     if (originalNodeEnv !== undefined) {
       process.env.NODE_ENV = originalNodeEnv;
     } else {
@@ -124,7 +130,7 @@ describe('AuthService', () => {
 
     await expect(
       new AuthService().authenticate('Bearer jwt'),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    ).rejects.toBeInstanceOf(BadGatewayException);
   });
 
   it('rejects empty required fields including dates', async () => {
@@ -158,13 +164,13 @@ describe('AuthService', () => {
     const service = new AuthService();
 
     await expect(service.authenticate('Bearer jwt')).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
+      BadGatewayException,
     );
     await expect(service.authenticate('Bearer jwt')).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
+      BadGatewayException,
     );
     await expect(service.authenticate('Bearer jwt')).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
+      BadGatewayException,
     );
   });
 
@@ -177,7 +183,7 @@ describe('AuthService', () => {
 
     await expect(
       new AuthService().authenticate('Bearer jwt'),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    ).rejects.toBeInstanceOf(BadGatewayException);
   });
 
   it('maps 401 to unauthorized', async () => {
@@ -242,7 +248,7 @@ describe('AuthService', () => {
     expect(errorLog).toHaveBeenCalled();
   });
 
-  it('maps a non-JSON Auth response to unavailable', async () => {
+  it('maps a non-JSON Auth response to bad gateway', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -251,9 +257,9 @@ describe('AuthService', () => {
       },
     });
 
-    await expect(new AuthService().authenticate('Bearer jwt')).rejects.toThrow(
-      "Réponse invalide du service d'authentification : JSON illisible",
-    );
+    await expect(
+      new AuthService().authenticate('Bearer jwt'),
+    ).rejects.toBeInstanceOf(BadGatewayException);
   });
 
   it('rejects null, arrays and primitive JSON responses', async () => {
@@ -269,14 +275,14 @@ describe('AuthService', () => {
 
     const service = new AuthService();
 
-    await expect(service.authenticate('Bearer jwt')).rejects.toThrow(
-      "Réponse invalide du service d'authentification : corps JSON non objet",
+    await expect(service.authenticate('Bearer jwt')).rejects.toBeInstanceOf(
+      BadGatewayException,
     );
-    await expect(service.authenticate('Bearer jwt')).rejects.toThrow(
-      "Réponse invalide du service d'authentification : corps JSON non objet",
+    await expect(service.authenticate('Bearer jwt')).rejects.toBeInstanceOf(
+      BadGatewayException,
     );
-    await expect(service.authenticate('Bearer jwt')).rejects.toThrow(
-      "Réponse invalide du service d'authentification : corps JSON non objet",
+    await expect(service.authenticate('Bearer jwt')).rejects.toBeInstanceOf(
+      BadGatewayException,
     );
   });
 
@@ -287,8 +293,32 @@ describe('AuthService', () => {
       json: async () => ({}),
     });
 
-    await expect(new AuthService().authenticate('Bearer jwt')).rejects.toThrow(
-      "Réponse invalide du service d'authentification : champs utilisateur invalides",
+    await expect(
+      new AuthService().authenticate('Bearer jwt'),
+    ).rejects.toBeInstanceOf(BadGatewayException);
+  });
+
+  it('uses a 3000 ms Auth timeout by default', () => {
+    delete process.env.AUTH_TIMEOUT_MS;
+    expect(resolveAuthTimeoutMs()).toBe(3000);
+  });
+
+  it('accepts a configurable positive Auth timeout', () => {
+    process.env.AUTH_TIMEOUT_MS = '4500';
+    expect(resolveAuthTimeoutMs()).toBe(4500);
+  });
+
+  it('rejects a non-integer Auth timeout', () => {
+    process.env.AUTH_TIMEOUT_MS = 'abc';
+    expect(resolveAuthTimeoutMs).toThrow(
+      'AUTH_TIMEOUT_MS doit être un entier : "abc"',
+    );
+  });
+
+  it('rejects a non-positive Auth timeout', () => {
+    process.env.AUTH_TIMEOUT_MS = '0';
+    expect(resolveAuthTimeoutMs).toThrow(
+      'AUTH_TIMEOUT_MS doit être supérieur à 0 : "0"',
     );
   });
 

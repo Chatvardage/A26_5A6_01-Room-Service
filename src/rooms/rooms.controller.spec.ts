@@ -21,6 +21,7 @@ describe('RoomsController', () => {
     roomsService = Object.fromEntries(
       [
         'findAll',
+        'findPublicOne',
         'findOne',
         'findInvitationsForUser',
         'create',
@@ -71,7 +72,7 @@ describe('RoomsController', () => {
 
   it('findOne', () => {
     controller.findOne('r');
-    expect(roomsService.findOne).toHaveBeenCalledWith('r');
+    expect(roomsService.findPublicOne).toHaveBeenCalledWith('r');
   });
 
   it('findMyInvitations', () => {
@@ -84,7 +85,7 @@ describe('RoomsController', () => {
     expect(roomsService.create).toHaveBeenCalledWith({ nom: 'x' }, 'u');
   });
 
-  it('update uses the current role attached by AuthGuard', () => {
+  it('update uses the current role attached by RoomAuthGuard', () => {
     const adminRequest = {
       ...request,
       user: { ...request.user, role: 'admin' as const },

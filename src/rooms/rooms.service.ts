@@ -22,10 +22,21 @@ export class RoomsService {
 
   async findAll(): Promise<RoomResponse[]> {
     const rooms = await this.prisma.room.findMany({
+      where: { visibility: 'public' },
       include: roomInclude,
       orderBy: { createdAt: 'asc' },
     });
     return rooms.map((room) => this.toResponse(room));
+  }
+
+  async findPublicOne(id: string): Promise<RoomResponse> {
+    const room = await this.getRoomOrThrow(id);
+
+    if (room.visibility !== 'public') {
+      throw new NotFoundException(`Salon ${id} non trouvé`);
+    }
+
+    return this.toResponse(room);
   }
 
   async findOne(id: string): Promise<RoomResponse> {

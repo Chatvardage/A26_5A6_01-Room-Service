@@ -14,7 +14,13 @@ describe('Rooms Service (e2e)', () => {
   let authService: { authenticate: jest.Mock };
   let prisma: {
     $queryRaw: jest.Mock;
-    room: { create: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
+    room: {
+      create: jest.Mock;
+      delete: jest.Mock;
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+      findUnique: jest.Mock;
+    };
   };
 
   const authenticatedUser = {
@@ -26,60 +32,76 @@ describe('Rooms Service (e2e)', () => {
     modifie_le: '2026-01-01T00:00:00.000Z',
   };
 
+  const adminUser = {
+    id: 'admin-e2e',
+    pseudo: 'admin-e2e',
+    courriel: 'admin-e2e@example.test',
+    role: 'admin' as const,
+    cree_le: '2026-01-01T00:00:00.000Z',
+    modifie_le: '2026-01-01T00:00:00.000Z',
+  };
+
   beforeEach(async () => {
     authService = {
       authenticate: jest.fn(async (authorization?: string) => {
-        if (authorization !== 'Bearer valid-jwt') {
-          throw new UnauthorizedException('Authorization Bearer requis');
+        if (authorization === 'Bearer valid-jwt') {
+          return authenticatedUser;
         }
-        return authenticatedUser;
+        if (authorization === 'Bearer admin-jwt') {
+          return adminUser;
+        }
+        throw new UnauthorizedException('Authorization Bearer requis');
       }),
+    };
+
+    const publicRoom = {
+      id: 'public-e2e',
+      name: 'public-room',
+      visibility: 'public',
+      ownerId: 'public-owner',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      members: [
+        {
+          roomId: 'public-e2e',
+          userId: 'public-owner',
+          joinedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+      invitations: [],
+    };
+
+    const privateRoom = {
+      id: 'private-e2e',
+      name: 'secret',
+      visibility: 'prive',
+      ownerId: authenticatedUser.id,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      members: [
+        {
+          roomId: 'private-e2e',
+          userId: authenticatedUser.id,
+          joinedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+      invitations: [],
     };
 
     prisma = {
       $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
       room: {
-        findMany: jest.fn().mockImplementation(({ where }: any) => {
+        findMany: jest.fn().mockImplementation(({ where }: any = {}) => {
+          if (!where) {
+            return [publicRoom, privateRoom];
+          }
+
           const canSeePrivate =
             Array.isArray(where?.OR) &&
             where.OR.some(
               (condition: any) =>
                 condition?.members?.some?.userId === authenticatedUser.id,
             );
-
-          const publicRoom = {
-            id: 'public-e2e',
-            name: 'public-room',
-            visibility: 'public',
-            ownerId: 'public-owner',
-            createdAt: new Date('2026-01-01T00:00:00.000Z'),
-            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-            members: [
-              {
-                roomId: 'public-e2e',
-                userId: 'public-owner',
-                joinedAt: new Date('2026-01-01T00:00:00.000Z'),
-              },
-            ],
-            invitations: [],
-          };
-
-          const privateRoom = {
-            id: 'private-e2e',
-            name: 'secret',
-            visibility: 'prive',
-            ownerId: authenticatedUser.id,
-            createdAt: new Date('2026-01-01T00:00:00.000Z'),
-            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-            members: [
-              {
-                roomId: 'private-e2e',
-                userId: authenticatedUser.id,
-                joinedAt: new Date('2026-01-01T00:00:00.000Z'),
-              },
-            ],
-            invitations: [],
-          };
 
           return canSeePrivate ? [publicRoom, privateRoom] : [publicRoom];
         }),
@@ -95,22 +117,16 @@ describe('Rooms Service (e2e)', () => {
             return null;
           }
 
-          return {
-            id: 'private-e2e',
-            name: 'secret',
-            visibility: 'prive',
-            ownerId: authenticatedUser.id,
-            createdAt: new Date('2026-01-01T00:00:00.000Z'),
-            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-            members: [
-              {
-                roomId: 'private-e2e',
-                userId: authenticatedUser.id,
-                joinedAt: new Date('2026-01-01T00:00:00.000Z'),
-              },
-            ],
-            invitations: [],
-          };
+          return privateRoom;
+        }),
+        findUnique: jest.fn().mockImplementation(({ where }: any) => {
+          if (where?.id === 'private-e2e') {
+            return privateRoom;
+          }
+          if (where?.id === 'public-e2e') {
+            return publicRoom;
+          }
+          return null;
         }),
         create: jest.fn().mockResolvedValue({
           id: 'room-e2e',
@@ -128,6 +144,7 @@ describe('Rooms Service (e2e)', () => {
           ],
           invitations: [],
         }),
+        delete: jest.fn().mockResolvedValue(privateRoom),
       },
     };
 
@@ -234,6 +251,41 @@ describe('Rooms Service (e2e)', () => {
       ]),
     );
     expect(authService.authenticate).toHaveBeenCalledWith('Bearer valid-jwt');
+  });
+
+  it('GET /api/admin/rooms refuse un utilisateur non-admin', async () => {
+    const response = await fetch(`${baseUrl}/api/admin/rooms`, {
+      headers: { authorization: 'Bearer valid-jwt' },
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('GET /api/admin/rooms permet à un admin de voir tous les salons', async () => {
+    const response = await fetch(`${baseUrl}/api/admin/rooms`, {
+      headers: { authorization: 'Bearer admin-jwt' },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'public-e2e', visibilite: 'public' }),
+        expect.objectContaining({ id: 'private-e2e', visibilite: 'prive' }),
+      ]),
+    );
+    expect(authService.authenticate).toHaveBeenCalledWith('Bearer admin-jwt');
+  });
+
+  it('DELETE /api/rooms/:id permet à un admin de supprimer un salon', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms/private-e2e`, {
+      method: 'DELETE',
+      headers: { authorization: 'Bearer admin-jwt' },
+    });
+
+    expect(response.status).toBe(204);
+    expect(prisma.room.delete).toHaveBeenCalledWith({
+      where: { id: 'private-e2e' },
+    });
   });
 
   it('GET /api/rooms/:id masque un salon privé pour un client anonyme', async () => {

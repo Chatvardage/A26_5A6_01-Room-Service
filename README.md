@@ -63,6 +63,7 @@ Toutes les routes sont préfixées par `/api`.
 |---|---|---|
 | GET | `/api/rooms` | Liste des salons publics; avec JWT, inclut aussi les salons privés dont l’utilisateur est membre |
 | GET | `/api/rooms/:id` | Obtenir un salon public; avec JWT, un salon privé dont l’utilisateur est membre |
+| GET | `/api/admin/rooms` | Lister tous les salons pour le panneau d’administration (admin seulement) |
 | POST | `/api/rooms` | Créer un salon |
 | PATCH | `/api/rooms/:id` | Modifier un salon |
 | DELETE | `/api/rooms/:id` | Supprimer un salon |
@@ -74,10 +75,13 @@ Toutes les routes sont préfixées par `/api`.
 | POST | `/api/rooms/:id/leave` | Quitter un salon |
 | GET | `/api/health` | Vérifier le service et PostgreSQL |
 
+Le panneau d’administration utilise `GET /api/admin/rooms` pour voir tous les salons, publics et privés. Pour supprimer un salon, un administrateur peut utiliser `DELETE /api/rooms/:id`, qui autorise l’hôte du salon ou le rôle `admin`.
+
 ## Permissions
 
 - Le créateur d'un salon devient automatiquement son hôte et son premier membre.
 - Seul l'hôte ou un administrateur peut modifier ou supprimer un salon.
+- Un administrateur peut lister tous les salons via `GET /api/admin/rooms`; `moderateur` et `utilisateur` reçoivent 403.
 - Seul l'hôte ou un administrateur peut inviter dans un salon privé.
 - Un utilisateur peut rejoindre librement un salon public.
 - Un utilisateur doit être invité pour rejoindre un salon privé.

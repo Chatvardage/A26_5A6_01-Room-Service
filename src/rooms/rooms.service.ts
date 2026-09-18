@@ -32,6 +32,18 @@ export class RoomsService {
     return rooms.map((room) => this.toResponse(room));
   }
 
+  async findAllForAdmin(actorRole: ActorRole): Promise<RoomResponse[]> {
+    if (actorRole !== 'admin') {
+      throw new ForbiddenException('Action réservée aux administrateurs');
+    }
+
+    const rooms = await this.prisma.room.findMany({
+      include: roomInclude,
+      orderBy: { createdAt: 'asc' },
+    });
+    return rooms.map((room) => this.toResponse(room));
+  }
+
   async findAccessibleOne(id: string, userId?: string): Promise<RoomResponse> {
     const room = await this.prisma.room.findFirst({
       where: { id, ...this.buildAccessFilter(userId) },

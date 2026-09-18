@@ -75,6 +75,27 @@ describe('RoomsService', () => {
       }),
     );
   });
+
+  it('findAllForAdmin liste tous les salons pour un administrateur', async () => {
+    prisma.room.findMany.mockResolvedValue([
+      makeRoom(),
+      makeRoom({ id: 'room-2', visibility: 'prive' }),
+    ]);
+
+    await expect(service.findAllForAdmin('admin')).resolves.toHaveLength(2);
+    expect(prisma.room.findMany).toHaveBeenCalledWith({
+      include: expect.any(Object),
+      orderBy: { createdAt: 'asc' },
+    });
+  });
+
+  it('findAllForAdmin refuse un moderateur', async () => {
+    await expect(service.findAllForAdmin('moderateur')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(prisma.room.findMany).not.toHaveBeenCalled();
+  });
+
   it('findAccessibleOne anonyme filtre directement sur les salons publics', async () => {
     prisma.room.findFirst.mockResolvedValue(makeRoom());
 

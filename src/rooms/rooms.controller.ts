@@ -17,11 +17,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import {
-  AuthenticatedRequest,
-  OptionalAuthRoute,
-  PublicRoute,
-} from '../auth/auth.guard';
+import { AuthenticatedRequest, OptionalAuthRoute } from '../auth/auth.guard';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
@@ -42,10 +38,13 @@ export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
   @Get()
-  @PublicRoute()
-  @ApiOperation({ summary: 'Récupère tous les salons publics' })
-  findAll() {
-    return this.roomsService.findAll();
+  @OptionalAuthRoute()
+  @ApiOperation({
+    summary:
+      'Récupère les salons publics et, avec JWT, les salons privés de l’utilisateur',
+  })
+  findAll(@Req() request: AuthenticatedRequest) {
+    return this.roomsService.findAll(request.user?.id);
   }
 
   @Get('invitations/me')

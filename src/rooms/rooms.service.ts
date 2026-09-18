@@ -23,9 +23,18 @@ const roomInclude = {
 export class RoomsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<RoomResponse[]> {
+  async findAll(userId?: string): Promise<RoomResponse[]> {
+    const accessFilter = userId
+      ? {
+          OR: [
+            { visibility: 'public' as const },
+            { members: { some: { userId } } },
+          ],
+        }
+      : { visibility: 'public' as const };
+
     const rooms = await this.prisma.room.findMany({
-      where: { visibility: 'public' },
+      where: accessFilter,
       include: roomInclude,
       orderBy: { createdAt: 'asc' },
     });

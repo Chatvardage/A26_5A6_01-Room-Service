@@ -14,7 +14,7 @@ describe('Rooms Service (e2e)', () => {
   let authService: { authenticate: jest.Mock };
   let prisma: {
     $queryRaw: jest.Mock;
-    room: { create: jest.Mock; findFirst: jest.Mock };
+    room: { create: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
   };
 
   const authenticatedUser = {
@@ -39,6 +39,50 @@ describe('Rooms Service (e2e)', () => {
     prisma = {
       $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
       room: {
+        findMany: jest.fn().mockImplementation(({ where }: any) => {
+          const canSeePrivate =
+            Array.isArray(where?.OR) &&
+            where.OR.some(
+              (condition: any) =>
+                condition?.members?.some?.userId === authenticatedUser.id,
+            );
+
+          const publicRoom = {
+            id: 'public-e2e',
+            name: 'public-room',
+            visibility: 'public',
+            ownerId: 'public-owner',
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+            members: [
+              {
+                roomId: 'public-e2e',
+                userId: 'public-owner',
+                joinedAt: new Date('2026-01-01T00:00:00.000Z'),
+              },
+            ],
+            invitations: [],
+          };
+
+          const privateRoom = {
+            id: 'private-e2e',
+            name: 'secret',
+            visibility: 'prive',
+            ownerId: authenticatedUser.id,
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+            members: [
+              {
+                roomId: 'private-e2e',
+                userId: authenticatedUser.id,
+                joinedAt: new Date('2026-01-01T00:00:00.000Z'),
+              },
+            ],
+            invitations: [],
+          };
+
+          return canSeePrivate ? [publicRoom, privateRoom] : [publicRoom];
+        }),
         findFirst: jest.fn().mockImplementation(({ where }: any) => {
           const isMemberLookup =
             Array.isArray(where?.OR) &&
@@ -156,6 +200,40 @@ describe('Rooms Service (e2e)', () => {
         data: expect.objectContaining({ ownerId: authenticatedUser.id }),
       }),
     );
+  });
+
+  it('GET /api/rooms anonyme ne liste que les salons publics', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'public-e2e',
+        visibilite: 'public',
+      }),
+    ]);
+    expect(authService.authenticate).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/rooms avec JWT inclut les salons privés dont l’utilisateur est membre', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      headers: { authorization: 'Bearer valid-jwt' },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'public-e2e',
+          visibilite: 'public',
+        }),
+        expect.objectContaining({
+          id: 'private-e2e',
+          visibilite: 'prive',
+        }),
+      ]),
+    );
+    expect(authService.authenticate).toHaveBeenCalledWith('Bearer valid-jwt');
   });
 
   it('GET /api/rooms/:id masque un salon privé pour un client anonyme', async () => {

@@ -53,7 +53,7 @@ Le Rooms Service valide volontairement l’utilisateur auprès du service Auth �
 
 Sous Node.js 22, le `fetch` natif s’appuie sur le dispatcher global d’Undici, qui réutilise les connexions HTTP. Aucun pool HTTP supplémentaire n’est donc configuré dans le Room-Service.
 
-Un `RoomAuthGuard` NestJS est enregistré globalement via `APP_GUARD` : toute nouvelle route est donc protégée par défaut. Les exceptions doivent être explicitement marquées avec `@PublicRoute()`, notamment `GET /api/health` et `GET /api/rooms`. `GET /api/rooms/:id` utilise une authentification optionnelle : sans jeton, seuls les salons publics sont visibles; avec un JWT valide, un membre peut aussi relire un salon privé auquel il appartient. Un salon privé inaccessible reçoit la même réponse 404 qu’un salon inexistant afin d’éviter l’énumération. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution des gestionnaires protégés.
+Un `RoomAuthGuard` NestJS est enregistré globalement via `APP_GUARD` : toute nouvelle route est donc protégée par défaut. Les exceptions doivent être explicitement marquées avec `@PublicRoute()` ou `@OptionalAuthRoute()`. `GET /api/health` est public. `GET /api/rooms` et `GET /api/rooms/:id` utilisent une authentification optionnelle : sans jeton, seuls les salons publics sont visibles; avec un JWT valide, la liste inclut aussi les salons privés dont l’utilisateur est membre et le détail d’un tel salon devient accessible. Un salon privé inaccessible reçoit la même réponse 404 qu’un salon inexistant afin d’éviter l’énumération. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution des gestionnaires protégés.
 
 ## Routes
 
@@ -61,7 +61,7 @@ Toutes les routes sont préfixées par `/api`.
 
 | Méthode | Route | Description |
 |---|---|---|
-| GET | `/api/rooms` | Liste des salons publics |
+| GET | `/api/rooms` | Liste des salons publics; avec JWT, inclut aussi les salons privés dont l’utilisateur est membre |
 | GET | `/api/rooms/:id` | Obtenir un salon public; avec JWT, un salon privé dont l’utilisateur est membre |
 | POST | `/api/rooms` | Créer un salon |
 | PATCH | `/api/rooms/:id` | Modifier un salon |

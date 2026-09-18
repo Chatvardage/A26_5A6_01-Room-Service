@@ -39,7 +39,7 @@ describe('RoomsController', () => {
     controller = new RoomsController(roomsService as never);
   });
 
-  it('marks list as public, details as optional-auth, and writes as protected', () => {
+  it('marks list/details as optional-auth and writes as protected', () => {
     const reflector = new Reflector();
 
     // Nest attache les métadonnées à la fonction originale du prototype.
@@ -47,10 +47,16 @@ describe('RoomsController', () => {
     /* eslint-disable @typescript-eslint/unbound-method */
     expect(
       reflector.get<boolean>(
-        'rooms:public-route',
+        'rooms:optional-auth-route',
         RoomsController.prototype.findAll,
       ),
     ).toBe(true);
+    expect(
+      reflector.get<boolean>(
+        'rooms:public-route',
+        RoomsController.prototype.findAll,
+      ),
+    ).toBeUndefined();
     expect(
       reflector.get<boolean>(
         'rooms:optional-auth-route',
@@ -72,9 +78,14 @@ describe('RoomsController', () => {
     /* eslint-enable @typescript-eslint/unbound-method */
   });
 
-  it('findAll', () => {
-    controller.findAll();
-    expect(roomsService.findAll).toHaveBeenCalled();
+  it('findAll reste public sans identité', () => {
+    controller.findAll({} as AuthenticatedRequest);
+    expect(roomsService.findAll).toHaveBeenCalledWith(undefined);
+  });
+
+  it('findAll transmet l’identité quand le guard optionnel authentifie le client', () => {
+    controller.findAll(request);
+    expect(roomsService.findAll).toHaveBeenCalledWith('u');
   });
 
   it('findOne reste public sans identité', () => {

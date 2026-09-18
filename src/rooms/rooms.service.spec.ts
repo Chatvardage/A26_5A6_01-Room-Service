@@ -39,13 +39,40 @@ describe('RoomsService', () => {
     service = new RoomsService(prisma as PrismaService);
   });
 
-  it('findAll ne récupère que les salons publics', async () => {
+  it('findAll anonyme ne récupère que les salons publics', async () => {
     prisma.room.findMany.mockResolvedValue([makeRoom()]);
     await expect(service.findAll()).resolves.toEqual([
       expect.objectContaining({ nom: 'general', membreIds: ['user-1'] }),
     ]);
     expect(prisma.room.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { visibility: 'public' } }),
+    );
+  });
+
+  it('findAll authentifié inclut les salons publics et ses salons privés', async () => {
+    prisma.room.findMany.mockResolvedValue([
+      makeRoom(),
+      makeRoom({
+        id: 'room-2',
+        name: 'secret',
+        visibility: 'prive',
+        members: [{ userId: 'user-2' }],
+      }),
+    ]);
+
+    await expect(service.findAll('user-2')).resolves.toEqual([
+      expect.objectContaining({ id: 'room-1', visibilite: 'public' }),
+      expect.objectContaining({ id: 'room-2', visibilite: 'prive' }),
+    ]);
+    expect(prisma.room.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { visibility: 'public' },
+            { members: { some: { userId: 'user-2' } } },
+          ],
+        },
+      }),
     );
   });
   it('findAccessibleOne anonyme filtre directement sur les salons publics', async () => {
@@ -183,6 +210,13 @@ describe('RoomsService', () => {
     prisma.room.findUnique.mockResolvedValue(makeRoom());
     await expect(
       service.update('room-1', { nom: 'x' }, 'user-2', 'utilisateur'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('update ne donne pas les droits administrateur à un moderateur', async () => {
+    prisma.room.findUnique.mockResolvedValue(makeRoom());
+    await expect(
+      service.update('room-1', { nom: 'x' }, 'moderator-1', 'moderateur'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
   it('remove autorise admin et supprime', async () => {

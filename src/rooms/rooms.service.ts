@@ -24,17 +24,8 @@ export class RoomsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(userId?: string): Promise<RoomResponse[]> {
-    const accessFilter = userId
-      ? {
-          OR: [
-            { visibility: 'public' as const },
-            { members: { some: { userId } } },
-          ],
-        }
-      : { visibility: 'public' as const };
-
     const rooms = await this.prisma.room.findMany({
-      where: accessFilter,
+      where: this.buildAccessFilter(userId),
       include: roomInclude,
       orderBy: { createdAt: 'asc' },
     });
@@ -42,17 +33,8 @@ export class RoomsService {
   }
 
   async findAccessibleOne(id: string, userId?: string): Promise<RoomResponse> {
-    const accessFilter = userId
-      ? {
-          OR: [
-            { visibility: 'public' as const },
-            { members: { some: { userId } } },
-          ],
-        }
-      : { visibility: 'public' as const };
-
     const room = await this.prisma.room.findFirst({
-      where: { id, ...accessFilter },
+      where: { id, ...this.buildAccessFilter(userId) },
       include: roomInclude,
     });
 
@@ -63,6 +45,8 @@ export class RoomsService {
     return this.toResponse(room);
   }
 
+  // Usage interne uniquement : les appelants doivent avoir déjà appliqué
+  // les contrôles d'authentification et d'autorisation nécessaires.
   async findOne(id: string): Promise<RoomResponse> {
     const room = await this.getRoomOrThrow(id);
     return this.toResponse(room);
@@ -240,6 +224,17 @@ export class RoomsService {
     });
 
     return this.findOne(id);
+  }
+
+  private buildAccessFilter(userId?: string) {
+    return userId
+      ? {
+          OR: [
+            { visibility: 'public' as const },
+            { members: { some: { userId } } },
+          ],
+        }
+      : { visibility: 'public' as const };
   }
 
   private async getRoomOrThrow(id: string) {

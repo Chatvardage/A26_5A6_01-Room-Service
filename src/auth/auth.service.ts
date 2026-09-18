@@ -81,6 +81,7 @@ export class AuthService {
   }
 
   async authenticate(authorization?: string): Promise<AuthenticatedUser> {
+    // Les noms de schémas d’authentification HTTP sont insensibles à la casse.
     const bearerMatch = authorization?.match(/^Bearer\s+(\S+)\s*$/i);
 
     if (!bearerMatch) {

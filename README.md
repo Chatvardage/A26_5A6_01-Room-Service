@@ -43,16 +43,17 @@ Le modèle retourné par l'API reste compatible avec le modèle `Salon` du clien
 
 ## Authentification entre services
 
-L'authentification est effectuée par le **Auth/User Service** et l'API Gateway.
+Les routes qui agissent au nom d'un utilisateur reçoivent le JWT final du **service Auth** dans `Authorization: Bearer <jeton>`. Le Rooms Service ne fait confiance à aucun en-tête `x-user-id` ou `x-user-role` fourni par le client.
 
-Le Rooms Service reçoit l'identité validée dans les en-têtes internes :
+Pour chaque action protégée, il appelle `GET /api/auth/me` du service Auth. Auth valide la signature, l'expiration et `version_auth`, recharge l'utilisateur dans PostgreSQL et retourne son rôle courant. Les changements de rôle, suppressions de compte et révocations sont donc pris en compte sans recopier le rôle dans le JWT.
 
-```http
-x-user-id: <id utilisateur>
-x-user-role: user | moderator | admin
-```
+En intégration Docker locale, le service Auth peut être joint en HTTP sur un réseau de développement. `AUTH_SERVICE_URL` doit désigner uniquement l’origine du service Auth (par exemple `http://auth-service:3001`), sans chemin, paramètres de requête ni fragment. En production (`NODE_ENV=production`), cette URL doit obligatoirement utiliser `https://`; le Rooms Service refuse de démarrer avec une configuration Auth invalide ou non sécurisée.
 
-En production, le Rooms Service ne doit pas être exposé directement à Internet. Ces en-têtes doivent être ajoutés par l'API Gateway après validation du JWT.
+Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai configuré par `AUTH_TIMEOUT_MS` (3 000 ms par défaut), Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes. Une réponse Auth 2xx au format JSON invalide est traitée comme une erreur 502 (réponse incorrecte du service en amont), tandis qu’une indisponibilité réseau ou un 5xx Auth reste une erreur 503. Les journaux distinguent un dépassement du délai configuré d’une erreur réseau afin de faciliter le diagnostic.
+
+Sous Node.js 22, le `fetch` natif s’appuie sur le dispatcher global d’Undici, qui réutilise les connexions HTTP. Aucun pool HTTP supplémentaire n’est donc configuré dans le Room-Service.
+
+Un `RoomAuthGuard` NestJS est enregistré globalement via `APP_GUARD` : toute nouvelle route est donc protégée par défaut. Les exceptions doivent être explicitement marquées avec `@PublicRoute()` ou `@OptionalAuthRoute()`. `GET /api/health` est public. `GET /api/rooms` et `GET /api/rooms/:id` utilisent une authentification optionnelle : sans en-tête `Authorization`, seuls les salons publics sont visibles; avec un JWT valide, la liste inclut aussi les salons privés dont l’utilisateur est membre et le détail d’un tel salon devient accessible. Si un en-tête `Authorization` est présent mais que le jeton est invalide ou expiré, la requête échoue avec l’erreur d’authentification correspondante au lieu d’être traitée comme anonyme. Un salon privé inaccessible reçoit la même réponse 404 qu’un salon inexistant afin d’éviter l’énumération. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution des gestionnaires protégés.
 
 ## Routes
 
@@ -60,23 +61,27 @@ Toutes les routes sont préfixées par `/api`.
 
 | Méthode | Route | Description |
 |---|---|---|
-| GET | `/api/rooms` | Liste des salons |
-| GET | `/api/rooms/:id` | Obtenir un salon |
+| GET | `/api/rooms` | Liste des salons publics; avec JWT, inclut aussi les salons privés dont l’utilisateur est membre |
+| GET | `/api/rooms/:id` | Obtenir un salon public; avec JWT, un salon privé dont l’utilisateur est membre |
+| GET | `/api/admin/rooms` | Lister tous les salons pour le panneau d’administration (admin seulement) |
 | POST | `/api/rooms` | Créer un salon |
 | PATCH | `/api/rooms/:id` | Modifier un salon |
 | DELETE | `/api/rooms/:id` | Supprimer un salon |
 | GET | `/api/rooms/invitations/me` | Invitations de l'utilisateur connecté |
-| POST | `/api/rooms/:id/invitations` | Inviter un utilisateur |
+| POST | `/api/rooms/:id/invitations` | Inviter un utilisateur (idempotent : aucun doublon si déjà membre ou invité) |
 | POST | `/api/rooms/:id/invitations/accept` | Accepter une invitation |
 | POST | `/api/rooms/:id/invitations/refuse` | Refuser une invitation |
 | POST | `/api/rooms/:id/join` | Rejoindre un salon |
 | POST | `/api/rooms/:id/leave` | Quitter un salon |
 | GET | `/api/health` | Vérifier le service et PostgreSQL |
 
+Le panneau d’administration utilise `GET /api/admin/rooms` pour voir tous les salons, publics et privés. Pour supprimer un salon, un administrateur peut utiliser `DELETE /api/rooms/:id`, qui autorise l’hôte du salon ou le rôle `admin`.
+
 ## Permissions
 
 - Le créateur d'un salon devient automatiquement son hôte et son premier membre.
 - Seul l'hôte ou un administrateur peut modifier ou supprimer un salon.
+- Un administrateur peut lister tous les salons via `GET /api/admin/rooms`; `moderateur` et `utilisateur` reçoivent 403.
 - Seul l'hôte ou un administrateur peut inviter dans un salon privé.
 - Un utilisateur peut rejoindre librement un salon public.
 - Un utilisateur doit être invité pour rejoindre un salon privé.
@@ -86,6 +91,29 @@ Toutes les routes sont préfixées par `/api`.
 
 Prérequis : Node.js 22 et PostgreSQL, ou Docker.
 
+### Option recommandée : Docker
+
+Pour tester le service sans configuration PostgreSQL manuelle :
+
+```bash
+docker compose -f compose.local.yml up --build
+```
+
+Le Compose local crée une base `chatvardage_rooms` avec l'utilisateur `room_service`, exactement comme `.env.example`.
+
+Par défaut, ce compose force `NODE_ENV=development`, cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL`, `AUTH_TIMEOUT_MS` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire. Sous Linux, l'alias `host.docker.internal` repose sur `host-gateway`, disponible avec Docker Engine 20.10 ou plus récent.
+
+### Option Node.js + PostgreSQL local
+
+Avant de démarrer le service, PostgreSQL doit contenir la base et le rôle correspondant à `.env.example` :
+
+```sql
+CREATE ROLE room_service WITH LOGIN PASSWORD 'room_service_dev';
+CREATE DATABASE chatvardage_rooms OWNER room_service;
+```
+
+Puis :
+
 ```bash
 npm install
 cp .env.example .env
@@ -93,6 +121,8 @@ npx prisma generate
 npx prisma migrate deploy
 npm run start:dev
 ```
+
+Les scripts `start` et `start:dev` chargent explicitement `.env`; il faut donc créer ce fichier avant de les lancer.
 
 Le service écoute par défaut sur :
 
@@ -119,13 +149,19 @@ Il démarre :
 - `rooms-service` sur le port `3003`;
 - PostgreSQL sur le port `5432`.
 
-Dans l'environnement final de l'équipe, ce service doit plutôt être référencé depuis le `docker-compose.yml` global avec les autres microservices et Redis.
+Pour tester les routes protégées, le service Auth doit aussi être disponible. Le chemin recommandé pour l'intégration complète est le `docker-compose.yml` global du dépôt Infra, qui démarre Auth, Rooms, Messages, PostgreSQL et Redis ensemble.
+
+En production, `CORS_ORIGINS` doit être défini explicitement et chaque entrée doit être une origine HTTP(S) valide, sans chemin, paramètres ni fragment (par exemple `https://app.example.com`). Les ports HTTP(S) par défaut explicites (`:80`/`:443`) sont normalisés vers l’origine canonique. Les origines de boucle locale (`localhost`, `127.0.0.1` et `[::1]`) sont refusées en production. Le fallback `http://localhost:5173` dans le code est réservé aux environnements hors production; `compose.local.yml` fournit explicitement cette origine pour le conteneur local. `AUTH_SERVICE_URL` doit également utiliser HTTPS en production.
 
 ## Variables d'environnement
 
 ```env
+NODE_ENV=development
 PORT=3003
 DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvardage_rooms?schema=public"
+AUTH_SERVICE_URL="http://localhost:3001"
+AUTH_TIMEOUT_MS=3000
+CORS_ORIGINS="http://localhost:5173"
 ```
 
 ## Exemple — créer un salon
@@ -133,7 +169,7 @@ DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvard
 ```bash
 curl -X POST http://localhost:3003/api/rooms \
   -H "Content-Type: application/json" \
-  -H "x-user-id: user-1" \
+  -H "Authorization: Bearer <JWT_USER_1>" \
   -d '{"nom":"general","visibilite":"public"}'
 ```
 
@@ -158,7 +194,7 @@ Créer le salon :
 ```bash
 curl -X POST http://localhost:3003/api/rooms \
   -H "Content-Type: application/json" \
-  -H "x-user-id: user-1" \
+  -H "Authorization: Bearer <JWT_USER_1>" \
   -d '{"nom":"equipe-privee","visibilite":"prive"}'
 ```
 
@@ -167,15 +203,17 @@ Inviter un utilisateur :
 ```bash
 curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations \
   -H "Content-Type: application/json" \
-  -H "x-user-id: user-1" \
+  -H "Authorization: Bearer <JWT_USER_1>" \
   -d '{"utilisateurId":"user-2"}'
 ```
+
+Cette opération est idempotente : si l’utilisateur est déjà membre du salon ou possède déjà une invitation, aucun doublon n’est créé et l’état courant du salon est retourné.
 
 Accepter l'invitation avec `user-2` :
 
 ```bash
 curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations/accept \
-  -H "x-user-id: user-2"
+  -H "Authorization: Bearer <JWT_USER_2>"
 ```
 
 ## Base de données

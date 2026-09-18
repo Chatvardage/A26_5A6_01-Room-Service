@@ -3,65 +3,66 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Post,
-  UnauthorizedException,
+  Req,
 } from '@nestjs/common';
 import {
-  ApiHeader,
+  ApiBearerAuth,
   ApiNoContentResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { AuthenticatedRequest, OptionalAuthRoute } from '../auth/auth.guard';
+import { requireUser } from '../auth/request-user';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomsService } from './rooms.service';
 
 @ApiTags('Rooms')
-@ApiHeader({
-  name: 'x-user-id',
-  required: true,
-  description:
-    "Identifiant de l'utilisateur authentifié, transmis par l'API Gateway",
-})
-@ApiHeader({
-  name: 'x-user-role',
-  required: false,
-  description: "Rôle transmis par l'API Gateway (user, moderator ou admin)",
-})
+@ApiBearerAuth()
 @Controller('rooms')
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Récupère tous les salons' })
-  findAll() {
-    return this.roomsService.findAll();
+  @OptionalAuthRoute()
+  @ApiOperation({
+    summary:
+      'Récupère les salons publics et, avec JWT, les salons privés de l’utilisateur',
+  })
+  findAll(@Req() request: AuthenticatedRequest) {
+    return this.roomsService.findAll(request.user?.id);
   }
 
   @Get('invitations/me')
   @ApiOperation({
     summary: "Récupère les invitations de l'utilisateur connecté",
   })
-  findMyInvitations(@Headers('x-user-id') userId?: string) {
-    return this.roomsService.findInvitationsForUser(this.requireUserId(userId));
+  findMyInvitations(@Req() request: AuthenticatedRequest) {
+    const user = requireUser(request);
+    return this.roomsService.findInvitationsForUser(user.id);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Récupère un salon par son identifiant' })
-  findOne(@Param('id') id: string) {
-    return this.roomsService.findOne(id);
+  @OptionalAuthRoute()
+  @ApiOperation({
+    summary:
+      'Récupère un salon public ou un salon privé dont l’utilisateur est membre',
+  })
+  findOne(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.roomsService.findAccessibleOne(id, request.user?.id);
   }
 
   @Post()
   @ApiOperation({ summary: 'Crée un salon' })
-  create(@Body() dto: CreateRoomDto, @Headers('x-user-id') userId?: string) {
-    return this.roomsService.create(dto, this.requireUserId(userId));
+  create(@Body() dto: CreateRoomDto, @Req() request: AuthenticatedRequest) {
+    const user = requireUser(request);
+    return this.roomsService.create(dto, user.id);
   }
 
   @Patch(':id')
@@ -69,15 +70,10 @@ export class RoomsController {
   update(
     @Param('id') id: string,
     @Body() dto: UpdateRoomDto,
-    @Headers('x-user-id') userId?: string,
-    @Headers('x-user-role') role?: string,
+    @Req() request: AuthenticatedRequest,
   ) {
-    return this.roomsService.update(
-      id,
-      dto,
-      this.requireUserId(userId),
-      role ?? 'user',
-    );
+    const user = requireUser(request);
+    return this.roomsService.update(id, dto, user.id, user.role);
   }
 
   @Delete(':id')
@@ -86,68 +82,60 @@ export class RoomsController {
   @ApiNoContentResponse({ description: 'Salon supprimé' })
   async remove(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
-    @Headers('x-user-role') role?: string,
+    @Req() request: AuthenticatedRequest,
   ): Promise<void> {
-    await this.roomsService.remove(
-      id,
-      this.requireUserId(userId),
-      role ?? 'user',
-    );
+    const user = requireUser(request);
+    await this.roomsService.remove(id, user.id, user.role);
   }
 
   @Post(':id/invitations')
-  @ApiOperation({ summary: 'Invite un utilisateur dans un salon privé' })
+  @ApiOperation({
+    summary: 'Invite un utilisateur dans un salon privé',
+    description:
+      'Opération idempotente : si l’utilisateur est déjà membre ou déjà invité, aucun doublon n’est créé et l’état courant du salon est retourné.',
+  })
   invite(
     @Param('id') id: string,
     @Body() dto: InviteMemberDto,
-    @Headers('x-user-id') userId?: string,
-    @Headers('x-user-role') role?: string,
+    @Req() request: AuthenticatedRequest,
   ) {
-    return this.roomsService.invite(
-      id,
-      dto.utilisateurId,
-      this.requireUserId(userId),
-      role ?? 'user',
-    );
+    const user = requireUser(request);
+    return this.roomsService.invite(id, dto.utilisateurId, user.id, user.role);
   }
 
   @Post(':id/invitations/accept')
   @ApiOperation({ summary: 'Accepte une invitation à un salon' })
   acceptInvitation(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @Req() request: AuthenticatedRequest,
   ) {
-    return this.roomsService.acceptInvitation(id, this.requireUserId(userId));
+    const user = requireUser(request);
+    return this.roomsService.acceptInvitation(id, user.id);
   }
 
   @Post(':id/invitations/refuse')
   @ApiOperation({ summary: 'Refuse une invitation à un salon' })
   refuseInvitation(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @Req() request: AuthenticatedRequest,
   ) {
-    return this.roomsService.refuseInvitation(id, this.requireUserId(userId));
+    const user = requireUser(request);
+    return this.roomsService.refuseInvitation(id, user.id);
   }
 
   @Post(':id/join')
   @ApiOperation({
     summary: 'Rejoint un salon public ou un salon privé sur invitation',
   })
-  join(@Param('id') id: string, @Headers('x-user-id') userId?: string) {
-    return this.roomsService.join(id, this.requireUserId(userId));
+  join(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    const user = requireUser(request);
+    return this.roomsService.join(id, user.id);
   }
 
   @Post(':id/leave')
   @ApiOperation({ summary: 'Quitte un salon' })
-  leave(@Param('id') id: string, @Headers('x-user-id') userId?: string) {
-    return this.roomsService.leave(id, this.requireUserId(userId));
-  }
-
-  private requireUserId(userId?: string): string {
-    if (!userId?.trim()) {
-      throw new UnauthorizedException('Utilisateur non authentifié');
-    }
-    return userId;
+  leave(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    const user = requireUser(request);
+    return this.roomsService.leave(id, user.id);
   }
 }

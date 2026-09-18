@@ -3,9 +3,16 @@ services:
     build: .
     environment:
       PORT: 3003
-      DATABASE_URL: postgresql://chatvardage:chatvardage@postgres:5432/chatvardage?schema=public
+      NODE_ENV: development
+      DATABASE_URL: postgresql://room_service:room_service_dev@postgres:5432/chatvardage_rooms?schema=public
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://host.docker.internal:3001}
+      AUTH_TIMEOUT_MS: ${AUTH_TIMEOUT_MS:-3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
       - "3003:3003"
+    # Linux Docker Engine 20.10+ requis pour la valeur spéciale host-gateway.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -19,15 +26,15 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: chatvardage
-      POSTGRES_PASSWORD: chatvardage
-      POSTGRES_DB: chatvardage
+      POSTGRES_USER: room_service
+      POSTGRES_PASSWORD: room_service_dev
+      POSTGRES_DB: chatvardage_rooms
     ports:
       - "5432:5432"
     volumes:
       - rooms-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chatvardage -d chatvardage"]
+      test: ["CMD-SHELL", "pg_isready -U room_service -d chatvardage_rooms"]
       interval: 5s
       timeout: 3s
       retries: 10

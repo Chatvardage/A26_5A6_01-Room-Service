@@ -1,13 +1,28 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import type { AuthenticatedRequest } from '../auth/auth.guard';
 import { RoomsController } from './rooms.controller';
 
 describe('RoomsController', () => {
-  let c: RoomsController;
-  let s: any;
+  let controller: RoomsController;
+  let roomsService: Record<string, jest.Mock>;
+
+  const request = {
+    user: {
+      id: 'u',
+      pseudo: 'user',
+      courriel: 'u@example.test',
+      role: 'utilisateur',
+      cree_le: '2026-01-01T00:00:00.000Z',
+      modifie_le: '2026-01-01T00:00:00.000Z',
+    },
+  } as AuthenticatedRequest;
+
   beforeEach(() => {
-    s = Object.fromEntries(
+    roomsService = Object.fromEntries(
       [
         'findAll',
+        'findAccessibleOne',
         'findOne',
         'findInvitationsForUser',
         'create',
@@ -18,67 +33,134 @@ describe('RoomsController', () => {
         'refuseInvitation',
         'join',
         'leave',
-      ].map((k) => [k, jest.fn().mockResolvedValue(k)]),
+      ].map((key) => [key, jest.fn().mockResolvedValue(key)]),
     );
-    c = new RoomsController(s);
+
+    controller = new RoomsController(roomsService as never);
   });
-  it('findAll', () => {
-    c.findAll();
-    expect(s.findAll).toHaveBeenCalled();
+
+  it('marks list/details as optional-auth and writes as protected', () => {
+    const reflector = new Reflector();
+
+    // Nest attache les métadonnées à la fonction originale du prototype.
+    // Ces références non liées sont donc intentionnelles pour Reflector.get().
+    /* eslint-disable @typescript-eslint/unbound-method */
+    expect(
+      reflector.get<boolean>(
+        'rooms:optional-auth-route',
+        RoomsController.prototype.findAll,
+      ),
+    ).toBe(true);
+    expect(
+      reflector.get<boolean>(
+        'rooms:public-route',
+        RoomsController.prototype.findAll,
+      ),
+    ).toBeUndefined();
+    expect(
+      reflector.get<boolean>(
+        'rooms:optional-auth-route',
+        RoomsController.prototype.findOne,
+      ),
+    ).toBe(true);
+    expect(
+      reflector.get<boolean>(
+        'rooms:public-route',
+        RoomsController.prototype.findOne,
+      ),
+    ).toBeUndefined();
+    expect(
+      reflector.get<boolean>(
+        'rooms:public-route',
+        RoomsController.prototype.create,
+      ),
+    ).toBeUndefined();
+    /* eslint-enable @typescript-eslint/unbound-method */
   });
-  it('findOne', () => {
-    c.findOne('r');
-    expect(s.findOne).toHaveBeenCalledWith('r');
+
+  it('findAll reste public sans identité', () => {
+    controller.findAll({} as AuthenticatedRequest);
+    expect(roomsService.findAll).toHaveBeenCalledWith(undefined);
   });
+
+  it('findAll transmet l’identité quand le guard optionnel authentifie le client', () => {
+    controller.findAll(request);
+    expect(roomsService.findAll).toHaveBeenCalledWith('u');
+  });
+
+  it('findOne reste public sans identité', () => {
+    controller.findOne('r', {} as AuthenticatedRequest);
+    expect(roomsService.findAccessibleOne).toHaveBeenCalledWith('r', undefined);
+  });
+
+  it('findOne transmet l’identité quand le guard optionnel authentifie le client', () => {
+    controller.findOne('r', request);
+    expect(roomsService.findAccessibleOne).toHaveBeenCalledWith('r', 'u');
+  });
+
   it('findMyInvitations', () => {
-    c.findMyInvitations('u');
-    expect(s.findInvitationsForUser).toHaveBeenCalledWith('u');
+    controller.findMyInvitations(request);
+    expect(roomsService.findInvitationsForUser).toHaveBeenCalledWith('u');
   });
+
   it('create', () => {
-    c.create({ nom: 'x' }, 'u');
-    expect(s.create).toHaveBeenCalledWith({ nom: 'x' }, 'u');
+    controller.create({ nom: 'x' }, request);
+    expect(roomsService.create).toHaveBeenCalledWith({ nom: 'x' }, 'u');
   });
-  it('update défaut role user', () => {
-    c.update('r', { nom: 'x' }, 'u');
-    expect(s.update).toHaveBeenCalledWith('r', { nom: 'x' }, 'u', 'user');
+
+  it('rejette proprement une route protégée sans utilisateur', () => {
+    expect(() =>
+      controller.create({ nom: 'x' }, {} as AuthenticatedRequest),
+    ).toThrow(UnauthorizedException);
   });
-  it('update role fourni', () => {
-    c.update('r', {}, 'u', 'admin');
-    expect(s.update).toHaveBeenCalledWith('r', {}, 'u', 'admin');
+
+  it('update uses the current role attached by RoomAuthGuard', () => {
+    const adminRequest = {
+      ...request,
+      user: { ...request.user, role: 'admin' as const },
+    } as AuthenticatedRequest;
+
+    controller.update('r', { nom: 'x' }, adminRequest);
+    expect(roomsService.update).toHaveBeenCalledWith(
+      'r',
+      { nom: 'x' },
+      'u',
+      'admin',
+    );
   });
-  it('remove défaut role user', async () => {
-    await c.remove('r', 'u');
-    expect(s.remove).toHaveBeenCalledWith('r', 'u', 'user');
+
+  it('remove', async () => {
+    await controller.remove('r', request);
+    expect(roomsService.remove).toHaveBeenCalledWith('r', 'u', 'utilisateur');
   });
-  it('remove role fourni', async () => {
-    await c.remove('r', 'u', 'admin');
-    expect(s.remove).toHaveBeenCalledWith('r', 'u', 'admin');
-  });
+
   it('invite', () => {
-    c.invite('r', { utilisateurId: 'v' }, 'u');
-    expect(s.invite).toHaveBeenCalledWith('r', 'v', 'u', 'user');
+    controller.invite('r', { utilisateurId: 'v' }, request);
+    expect(roomsService.invite).toHaveBeenCalledWith(
+      'r',
+      'v',
+      'u',
+      'utilisateur',
+    );
   });
-  it('invite admin', () => {
-    c.invite('r', { utilisateurId: 'v' }, 'u', 'admin');
-    expect(s.invite).toHaveBeenCalledWith('r', 'v', 'u', 'admin');
-  });
+
   it('accept', () => {
-    c.acceptInvitation('r', 'u');
-    expect(s.acceptInvitation).toHaveBeenCalledWith('r', 'u');
+    controller.acceptInvitation('r', request);
+    expect(roomsService.acceptInvitation).toHaveBeenCalledWith('r', 'u');
   });
+
   it('refuse', () => {
-    c.refuseInvitation('r', 'u');
-    expect(s.refuseInvitation).toHaveBeenCalledWith('r', 'u');
+    controller.refuseInvitation('r', request);
+    expect(roomsService.refuseInvitation).toHaveBeenCalledWith('r', 'u');
   });
+
   it('join', () => {
-    c.join('r', 'u');
-    expect(s.join).toHaveBeenCalledWith('r', 'u');
+    controller.join('r', request);
+    expect(roomsService.join).toHaveBeenCalledWith('r', 'u');
   });
+
   it('leave', () => {
-    c.leave('r', 'u');
-    expect(s.leave).toHaveBeenCalledWith('r', 'u');
-  });
-  it.each([undefined, '', '   '])('refuse identité invalide %p', (id) => {
-    expect(() => c.create({ nom: 'x' }, id)).toThrow(UnauthorizedException);
+    controller.leave('r', request);
+    expect(roomsService.leave).toHaveBeenCalledWith('r', 'u');
   });
 });

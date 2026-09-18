@@ -6,10 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { RoomVisibility } from '@prisma/client';
+import type { AuthenticatedUser } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomResponse } from './types/room-response.type';
+
+type ActorRole = AuthenticatedUser['role'];
 
 const roomInclude = {
   members: { orderBy: { joinedAt: 'asc' as const } },
@@ -20,7 +23,20 @@ const roomInclude = {
 export class RoomsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<RoomResponse[]> {
+  async findAll(userId?: string): Promise<RoomResponse[]> {
+    const rooms = await this.prisma.room.findMany({
+      where: this.buildAccessFilter(userId),
+      include: roomInclude,
+      orderBy: { createdAt: 'asc' },
+    });
+    return rooms.map((room) => this.toResponse(room));
+  }
+
+  async findAllForAdmin(actorRole: ActorRole): Promise<RoomResponse[]> {
+    if (actorRole !== 'admin') {
+      throw new ForbiddenException('Action réservée aux administrateurs');
+    }
+
     const rooms = await this.prisma.room.findMany({
       include: roomInclude,
       orderBy: { createdAt: 'asc' },
@@ -28,6 +44,21 @@ export class RoomsService {
     return rooms.map((room) => this.toResponse(room));
   }
 
+  async findAccessibleOne(id: string, userId?: string): Promise<RoomResponse> {
+    const room = await this.prisma.room.findFirst({
+      where: { id, ...this.buildAccessFilter(userId) },
+      include: roomInclude,
+    });
+
+    if (!room) {
+      throw new NotFoundException(`Salon ${id} non trouvé`);
+    }
+
+    return this.toResponse(room);
+  }
+
+  // Usage interne uniquement : les appelants doivent avoir déjà appliqué
+  // les contrôles d'authentification et d'autorisation nécessaires.
   async findOne(id: string): Promise<RoomResponse> {
     const room = await this.getRoomOrThrow(id);
     return this.toResponse(room);
@@ -59,7 +90,7 @@ export class RoomsService {
     id: string,
     dto: UpdateRoomDto,
     actorId: string,
-    actorRole: string,
+    actorRole: ActorRole,
   ): Promise<RoomResponse> {
     const current = await this.getRoomOrThrow(id);
     this.assertOwnerOrAdmin(current.ownerId, actorId, actorRole);
@@ -79,7 +110,11 @@ export class RoomsService {
     return this.toResponse(room);
   }
 
-  async remove(id: string, actorId: string, actorRole: string): Promise<void> {
+  async remove(
+    id: string,
+    actorId: string,
+    actorRole: ActorRole,
+  ): Promise<void> {
     const current = await this.getRoomOrThrow(id);
     this.assertOwnerOrAdmin(current.ownerId, actorId, actorRole);
     await this.prisma.room.delete({ where: { id } });
@@ -89,7 +124,7 @@ export class RoomsService {
     id: string,
     invitedUserId: string,
     actorId: string,
-    actorRole: string,
+    actorRole: ActorRole,
   ): Promise<RoomResponse> {
     const room = await this.getRoomOrThrow(id);
     this.assertOwnerOrAdmin(room.ownerId, actorId, actorRole);
@@ -203,6 +238,17 @@ export class RoomsService {
     return this.findOne(id);
   }
 
+  private buildAccessFilter(userId?: string) {
+    return userId
+      ? {
+          OR: [
+            { visibility: 'public' as const },
+            { members: { some: { userId } } },
+          ],
+        }
+      : { visibility: 'public' as const };
+  }
+
   private async getRoomOrThrow(id: string) {
     const room = await this.prisma.room.findUnique({
       where: { id },
@@ -218,7 +264,7 @@ export class RoomsService {
   private assertOwnerOrAdmin(
     ownerId: string,
     actorId: string,
-    actorRole: string,
+    actorRole: ActorRole,
   ): void {
     if (ownerId !== actorId && actorRole !== 'admin') {
       throw new ForbiddenException(

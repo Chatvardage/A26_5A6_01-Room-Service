@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
 } from 'class-validator';
 
@@ -12,6 +13,7 @@ export class UpdateRoomDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @Matches(/\S/, { message: 'nom ne peut pas contenir uniquement des espaces' })
   @MaxLength(80)
   nom?: string;
 

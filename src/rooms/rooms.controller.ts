@@ -9,7 +9,6 @@ import {
   Patch,
   Post,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -18,18 +17,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthenticatedRequest, OptionalAuthRoute } from '../auth/auth.guard';
+import { requireUser } from '../auth/request-user';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomsService } from './rooms.service';
-
-function requireUser(request: AuthenticatedRequest) {
-  if (!request.user) {
-    throw new UnauthorizedException('Utilisateur authentifié requis');
-  }
-
-  return request.user;
-}
 
 @ApiTags('Rooms')
 @ApiBearerAuth()
@@ -97,7 +89,11 @@ export class RoomsController {
   }
 
   @Post(':id/invitations')
-  @ApiOperation({ summary: 'Invite un utilisateur dans un salon privé' })
+  @ApiOperation({
+    summary: 'Invite un utilisateur dans un salon privé',
+    description:
+      'Opération idempotente : si l’utilisateur est déjà membre ou déjà invité, aucun doublon n’est créé et l’état courant du salon est retourné.',
+  })
   invite(
     @Param('id') id: string,
     @Body() dto: InviteMemberDto,

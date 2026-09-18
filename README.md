@@ -68,7 +68,7 @@ Toutes les routes sont préfixées par `/api`.
 | PATCH | `/api/rooms/:id` | Modifier un salon |
 | DELETE | `/api/rooms/:id` | Supprimer un salon |
 | GET | `/api/rooms/invitations/me` | Invitations de l'utilisateur connecté |
-| POST | `/api/rooms/:id/invitations` | Inviter un utilisateur |
+| POST | `/api/rooms/:id/invitations` | Inviter un utilisateur (idempotent : aucun doublon si déjà membre ou invité) |
 | POST | `/api/rooms/:id/invitations/accept` | Accepter une invitation |
 | POST | `/api/rooms/:id/invitations/refuse` | Refuser une invitation |
 | POST | `/api/rooms/:id/join` | Rejoindre un salon |
@@ -206,6 +206,8 @@ curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations \
   -H "Authorization: Bearer <JWT_USER_1>" \
   -d '{"utilisateurId":"user-2"}'
 ```
+
+Cette opération est idempotente : si l’utilisateur est déjà membre du salon ou possède déjà une invitation, aucun doublon n’est créé et l’état courant du salon est retourné.
 
 Accepter l'invitation avec `user-2` :
 

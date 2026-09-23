@@ -16,13 +16,13 @@ model Room {
   id          String          @id @default(uuid())
   name        String
   visibility  RoomVisibility  @default(public)
-  ownerId     String
+  createdBy   String
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   members     RoomMember[]
   invitations RoomInvitation[]
 
-  @@index([ownerId])
+  @@index([createdBy])
 }
 
 model RoomMember {

@@ -5,7 +5,7 @@ export interface RoomResponse {
   id: string;
   nom: string;
   visibilite: Visibilite;
-  hoteId: string;
+  creePar: string;
   membreIds: string[];
   membresInvites: string[];
 }

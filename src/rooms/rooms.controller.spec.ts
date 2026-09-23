@@ -29,6 +29,7 @@ describe('RoomsController', () => {
         'update',
         'remove',
         'invite',
+        'removeMember',
         'acceptInvitation',
         'refuseInvitation',
         'join',
@@ -103,9 +104,13 @@ describe('RoomsController', () => {
     expect(roomsService.findInvitationsForUser).toHaveBeenCalledWith('u');
   });
 
-  it('create', () => {
+  it('create transmet id et rôle courant', () => {
     controller.create({ nom: 'x' }, request);
-    expect(roomsService.create).toHaveBeenCalledWith({ nom: 'x' }, 'u');
+    expect(roomsService.create).toHaveBeenCalledWith(
+      { nom: 'x' },
+      'u',
+      'utilisateur',
+    );
   });
 
   it('rejette proprement une route protégée sans utilisateur', () => {
@@ -124,23 +129,31 @@ describe('RoomsController', () => {
     expect(roomsService.update).toHaveBeenCalledWith(
       'r',
       { nom: 'x' },
-      'u',
       'admin',
     );
   });
 
-  it('remove', async () => {
+  it('remove transmet le rôle courant', async () => {
     await controller.remove('r', request);
-    expect(roomsService.remove).toHaveBeenCalledWith('r', 'u', 'utilisateur');
+    expect(roomsService.remove).toHaveBeenCalledWith('r', 'utilisateur');
   });
 
-  it('invite', () => {
+  it('invite transmet le rôle courant', () => {
     controller.invite('r', { utilisateurId: 'v' }, request);
-    expect(roomsService.invite).toHaveBeenCalledWith(
+    expect(roomsService.invite).toHaveBeenCalledWith('r', 'v', 'utilisateur');
+  });
+
+  it('removeMember transmet id, userId et le rôle courant', () => {
+    const moderatorRequest = {
+      ...request,
+      user: { ...request.user, role: 'moderateur' as const },
+    } as AuthenticatedRequest;
+
+    controller.removeMember('r', 'v', moderatorRequest);
+    expect(roomsService.removeMember).toHaveBeenCalledWith(
       'r',
       'v',
-      'u',
-      'utilisateur',
+      'moderateur',
     );
   });
 

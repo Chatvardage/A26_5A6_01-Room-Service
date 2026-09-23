@@ -59,40 +59,49 @@ export class RoomsController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Crée un salon' })
+  @ApiOperation({
+    summary: 'Crée un salon',
+    description: 'Réservé à un modérateur ou à un administrateur.',
+  })
   create(@Body() dto: CreateRoomDto, @Req() request: AuthenticatedRequest) {
     const user = requireUser(request);
-    return this.roomsService.create(dto, user.id);
+    return this.roomsService.create(dto, user.id, user.role);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Modifie le nom ou la visibilité d’un salon' })
+  @ApiOperation({
+    summary: 'Modifie le nom ou la visibilité d’un salon',
+    description: 'Réservé à un modérateur ou à un administrateur.',
+  })
   update(
     @Param('id') id: string,
     @Body() dto: UpdateRoomDto,
     @Req() request: AuthenticatedRequest,
   ) {
     const user = requireUser(request);
-    return this.roomsService.update(id, dto, user.id, user.role);
+    return this.roomsService.update(id, dto, user.role);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Supprime un salon' })
+  @ApiOperation({
+    summary: 'Supprime un salon',
+    description: 'Réservé à un modérateur ou à un administrateur.',
+  })
   @ApiNoContentResponse({ description: 'Salon supprimé' })
   async remove(
     @Param('id') id: string,
     @Req() request: AuthenticatedRequest,
   ): Promise<void> {
     const user = requireUser(request);
-    await this.roomsService.remove(id, user.id, user.role);
+    await this.roomsService.remove(id, user.role);
   }
 
   @Post(':id/invitations')
   @ApiOperation({
     summary: 'Invite un utilisateur dans un salon privé',
     description:
-      'Opération idempotente : si l’utilisateur est déjà membre ou déjà invité, aucun doublon n’est créé et l’état courant du salon est retourné.',
+      'Réservé à un modérateur ou à un administrateur. Opération idempotente : si l’utilisateur est déjà membre ou déjà invité, aucun doublon n’est créé et l’état courant du salon est retourné.',
   })
   invite(
     @Param('id') id: string,
@@ -100,7 +109,21 @@ export class RoomsController {
     @Req() request: AuthenticatedRequest,
   ) {
     const user = requireUser(request);
-    return this.roomsService.invite(id, dto.utilisateurId, user.id, user.role);
+    return this.roomsService.invite(id, dto.utilisateurId, user.role);
+  }
+
+  @Delete(':id/members/:userId')
+  @ApiOperation({
+    summary: 'Retire un membre d’un salon',
+    description: 'Réservé à un modérateur ou à un administrateur.',
+  })
+  removeMember(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const user = requireUser(request);
+    return this.roomsService.removeMember(id, userId, user.role);
   }
 
   @Post(':id/invitations/accept')

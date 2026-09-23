@@ -21,6 +21,9 @@ describe('Rooms Service (e2e)', () => {
       findMany: jest.Mock;
       findUnique: jest.Mock;
     };
+    roomMember: {
+      delete: jest.Mock;
+    };
   };
 
   const authenticatedUser = {
@@ -28,6 +31,15 @@ describe('Rooms Service (e2e)', () => {
     pseudo: 'e2e',
     courriel: 'e2e@example.test',
     role: 'utilisateur' as const,
+    cree_le: '2026-01-01T00:00:00.000Z',
+    modifie_le: '2026-01-01T00:00:00.000Z',
+  };
+
+  const moderatorUser = {
+    id: 'moderateur-e2e',
+    pseudo: 'moderateur-e2e',
+    courriel: 'moderateur-e2e@example.test',
+    role: 'moderateur' as const,
     cree_le: '2026-01-01T00:00:00.000Z',
     modifie_le: '2026-01-01T00:00:00.000Z',
   };
@@ -47,6 +59,9 @@ describe('Rooms Service (e2e)', () => {
         if (authorization === 'Bearer valid-jwt') {
           return authenticatedUser;
         }
+        if (authorization === 'Bearer moderateur-jwt') {
+          return moderatorUser;
+        }
         if (authorization === 'Bearer admin-jwt') {
           return adminUser;
         }
@@ -58,13 +73,13 @@ describe('Rooms Service (e2e)', () => {
       id: 'public-e2e',
       name: 'public-room',
       visibility: 'public',
-      ownerId: 'public-owner',
+      createdBy: 'public-creator',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       members: [
         {
           roomId: 'public-e2e',
-          userId: 'public-owner',
+          userId: 'public-creator',
           joinedAt: new Date('2026-01-01T00:00:00.000Z'),
         },
       ],
@@ -75,7 +90,7 @@ describe('Rooms Service (e2e)', () => {
       id: 'private-e2e',
       name: 'secret',
       visibility: 'prive',
-      ownerId: authenticatedUser.id,
+      createdBy: authenticatedUser.id,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       members: [
@@ -132,19 +147,22 @@ describe('Rooms Service (e2e)', () => {
           id: 'room-e2e',
           name: 'general',
           visibility: 'public',
-          ownerId: authenticatedUser.id,
+          createdBy: moderatorUser.id,
           createdAt: new Date('2026-01-01T00:00:00.000Z'),
           updatedAt: new Date('2026-01-01T00:00:00.000Z'),
           members: [
             {
               roomId: 'room-e2e',
-              userId: authenticatedUser.id,
+              userId: moderatorUser.id,
               joinedAt: new Date('2026-01-01T00:00:00.000Z'),
             },
           ],
           invitations: [],
         }),
         delete: jest.fn().mockResolvedValue(privateRoom),
+      },
+      roomMember: {
+        delete: jest.fn().mockResolvedValue({}),
       },
     };
 
@@ -193,11 +211,25 @@ describe('Rooms Service (e2e)', () => {
     expect(response.status).toBe(401);
   });
 
-  it('POST /api/rooms crée un salon avec un JWT valide', async () => {
+  it('POST /api/rooms refuse un utilisateur simple', async () => {
     const response = await fetch(`${baseUrl}/api/rooms`, {
       method: 'POST',
       headers: {
         authorization: 'Bearer valid-jwt',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ nom: 'general', visibilite: 'public' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(prisma.room.create).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/rooms crée un salon pour un modérateur', async () => {
+    const response = await fetch(`${baseUrl}/api/rooms`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer moderateur-jwt',
         'content-type': 'application/json',
       },
       body: JSON.stringify({ nom: 'general', visibilite: 'public' }),
@@ -208,13 +240,15 @@ describe('Rooms Service (e2e)', () => {
       expect.objectContaining({
         id: 'room-e2e',
         nom: 'general',
-        hoteId: authenticatedUser.id,
+        creePar: moderatorUser.id,
       }),
     );
-    expect(authService.authenticate).toHaveBeenCalledWith('Bearer valid-jwt');
+    expect(authService.authenticate).toHaveBeenCalledWith(
+      'Bearer moderateur-jwt',
+    );
     expect(prisma.room.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ ownerId: authenticatedUser.id }),
+        data: expect.objectContaining({ createdBy: moderatorUser.id }),
       }),
     );
   });
@@ -309,5 +343,38 @@ describe('Rooms Service (e2e)', () => {
       }),
     );
     expect(authService.authenticate).toHaveBeenCalledWith('Bearer valid-jwt');
+  });
+
+  it('DELETE /api/rooms/:id/members/:userId refuse un utilisateur simple', async () => {
+    const response = await fetch(
+      `${baseUrl}/api/rooms/private-e2e/members/${authenticatedUser.id}`,
+      {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer valid-jwt' },
+      },
+    );
+
+    expect(response.status).toBe(403);
+    expect(prisma.roomMember.delete).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /api/rooms/:id/members/:userId permet à un modérateur de retirer un membre', async () => {
+    const response = await fetch(
+      `${baseUrl}/api/rooms/private-e2e/members/${authenticatedUser.id}`,
+      {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer moderateur-jwt' },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(prisma.roomMember.delete).toHaveBeenCalledWith({
+      where: {
+        roomId_userId: {
+          roomId: 'private-e2e',
+          userId: authenticatedUser.id,
+        },
+      },
+    });
   });
 });

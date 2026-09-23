@@ -73,12 +73,18 @@ export class RoomsService {
     return rooms.map((room) => this.toResponse(room));
   }
 
-  async create(dto: CreateRoomDto, actorId: string): Promise<RoomResponse> {
+  async create(
+    dto: CreateRoomDto,
+    actorId: string,
+    actorRole: ActorRole,
+  ): Promise<RoomResponse> {
+    this.assertModeratorOrAdmin(actorRole);
+
     const room = await this.prisma.room.create({
       data: {
         name: dto.nom.trim(),
         visibility: dto.visibilite ?? 'public',
-        ownerId: actorId,
+        createdBy: actorId,
         members: { create: { userId: actorId } },
       },
       include: roomInclude,
@@ -89,11 +95,10 @@ export class RoomsService {
   async update(
     id: string,
     dto: UpdateRoomDto,
-    actorId: string,
     actorRole: ActorRole,
   ): Promise<RoomResponse> {
-    const current = await this.getRoomOrThrow(id);
-    this.assertOwnerOrAdmin(current.ownerId, actorId, actorRole);
+    this.assertModeratorOrAdmin(actorRole);
+    await this.getRoomOrThrow(id);
 
     if (dto.nom === undefined && dto.visibilite === undefined) {
       throw new BadRequestException('Aucune modification fournie');
@@ -110,24 +115,19 @@ export class RoomsService {
     return this.toResponse(room);
   }
 
-  async remove(
-    id: string,
-    actorId: string,
-    actorRole: ActorRole,
-  ): Promise<void> {
-    const current = await this.getRoomOrThrow(id);
-    this.assertOwnerOrAdmin(current.ownerId, actorId, actorRole);
+  async remove(id: string, actorRole: ActorRole): Promise<void> {
+    this.assertModeratorOrAdmin(actorRole);
+    await this.getRoomOrThrow(id);
     await this.prisma.room.delete({ where: { id } });
   }
 
   async invite(
     id: string,
     invitedUserId: string,
-    actorId: string,
     actorRole: ActorRole,
   ): Promise<RoomResponse> {
+    this.assertModeratorOrAdmin(actorRole);
     const room = await this.getRoomOrThrow(id);
-    this.assertOwnerOrAdmin(room.ownerId, actorId, actorRole);
 
     if (room.visibility === 'public') {
       throw new BadRequestException(
@@ -148,6 +148,27 @@ export class RoomsService {
         data: { roomId: id, userId: invitedUserId },
       });
     }
+
+    return this.findOne(id);
+  }
+
+  async removeMember(
+    id: string,
+    userId: string,
+    actorRole: ActorRole,
+  ): Promise<RoomResponse> {
+    this.assertModeratorOrAdmin(actorRole);
+    const room = await this.getRoomOrThrow(id);
+
+    if (!room.members.some((member) => member.userId === userId)) {
+      throw new NotFoundException(
+        `Membre ${userId} non trouvé dans le salon ${id}`,
+      );
+    }
+
+    await this.prisma.roomMember.delete({
+      where: { roomId_userId: { roomId: id, userId } },
+    });
 
     return this.findOne(id);
   }
@@ -221,12 +242,6 @@ export class RoomsService {
   async leave(id: string, actorId: string): Promise<RoomResponse> {
     const room = await this.getRoomOrThrow(id);
 
-    if (room.ownerId === actorId) {
-      throw new ForbiddenException(
-        "L'hôte ne peut pas quitter son propre salon",
-      );
-    }
-
     if (!room.members.some((member) => member.userId === actorId)) {
       throw new ConflictException("L'utilisateur n'est pas membre du salon");
     }
@@ -261,14 +276,10 @@ export class RoomsService {
     return room;
   }
 
-  private assertOwnerOrAdmin(
-    ownerId: string,
-    actorId: string,
-    actorRole: ActorRole,
-  ): void {
-    if (ownerId !== actorId && actorRole !== 'admin') {
+  private assertModeratorOrAdmin(actorRole: ActorRole): void {
+    if (actorRole !== 'moderateur' && actorRole !== 'admin') {
       throw new ForbiddenException(
-        "Action réservée à l'hôte du salon ou à un administrateur",
+        'Action réservée à un modérateur ou un administrateur',
       );
     }
   }
@@ -277,7 +288,7 @@ export class RoomsService {
     id: string;
     name: string;
     visibility: RoomVisibility;
-    ownerId: string;
+    createdBy: string;
     members: { userId: string }[];
     invitations: { userId: string }[];
   }): RoomResponse {
@@ -286,7 +297,7 @@ export class RoomsService {
       id: room.id,
       nom: room.name,
       visibilite: room.visibility,
-      hoteId: room.ownerId,
+      creePar: room.createdBy,
       membreIds: room.members.map((member) => member.userId),
       membresInvites: room.invitations.map((invitation) => invitation.userId),
     };

@@ -37,10 +37,10 @@ Le service doit conserver la responsabilité de :
 
 - créer, lire, modifier et supprimer des salons;
 - gérer les salons publics et privés;
-- gérer l'hôte et les membres;
+- gérer les membres d'un salon;
 - gérer les invitations aux salons privés;
 - rejoindre et quitter un salon;
-- appliquer les permissions hôte/admin;
+- appliquer les permissions selon le rôle global de l'appelant (admin/modérateur/utilisateur);
 - persister les salons, membres et invitations dans PostgreSQL;
 - exposer un healthcheck pour le service et PostgreSQL.
 
@@ -70,13 +70,13 @@ Conserver, sauf changement coordonné entre les dépôts, le format de salon com
   id: string,
   nom: string,
   visibilite: 'public' | 'prive',
-  hoteId: string,
+  creePar: string,
   membreIds: string[],
   membresInvites: string[]
 }
 ```
 
-Les `userId` restent des chaînes. Ne pas ajouter de table `User` ou de clé étrangère vers un utilisateur : les utilisateurs appartiennent au service d'authentification.
+`creePar` (anciennement `hoteId`) est purement informationnel : il indique qui a créé le salon mais n'accorde aucune autorité particulière sur celui-ci. Ce renommage, ainsi que le retrait complet du concept d'« hôte »/« owner » par salon au profit d'une autorisation basée sur le rôle global de l'appelant (`admin`/`moderateur`/`utilisateur`, voir `assertModeratorOrAdmin` dans `RoomsService`), est un changement de contrat volontaire et coordonné avec le dépôt Frontend (branche `feature/moderator-roles`). Les `userId` restent des chaînes. Ne pas ajouter de table `User` ou de clé étrangère vers un utilisateur : les utilisateurs appartiennent au service d'authentification.
 
 ## Base de données et Prisma
 

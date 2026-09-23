@@ -27,7 +27,7 @@ Le service permet de :
 - rejoindre ou quitter un salon;
 - conserver les salons dans PostgreSQL.
 
-Le modèle retourné par l'API reste compatible avec le modèle `Salon` du client Electron du contrôle 1 :
+Le modèle retourné par l'API pour un salon est le suivant. Ce format a changé de façon coordonnée avec le Frontend (voir [Permissions](#permissions)) : le champ `hoteId` a été retiré et remplacé par `creePar`, qui est purement informationnel et ne confère plus aucune autorité sur le salon.
 
 ```ts
 {
@@ -35,7 +35,7 @@ Le modèle retourné par l'API reste compatible avec le modèle `Salon` du clien
   id: string,
   nom: string,
   visibilite: 'public' | 'prive',
-  hoteId: string,
+  creePar: string,
   membreIds: string[],
   membresInvites: string[]
 }
@@ -64,28 +64,30 @@ Toutes les routes sont préfixées par `/api`.
 | GET | `/api/rooms` | Liste des salons publics; avec JWT, inclut aussi les salons privés dont l’utilisateur est membre |
 | GET | `/api/rooms/:id` | Obtenir un salon public; avec JWT, un salon privé dont l’utilisateur est membre |
 | GET | `/api/admin/rooms` | Lister tous les salons pour le panneau d’administration (admin seulement) |
-| POST | `/api/rooms` | Créer un salon |
-| PATCH | `/api/rooms/:id` | Modifier un salon |
-| DELETE | `/api/rooms/:id` | Supprimer un salon |
+| POST | `/api/rooms` | Créer un salon (modérateur ou administrateur) |
+| PATCH | `/api/rooms/:id` | Modifier un salon (modérateur ou administrateur) |
+| DELETE | `/api/rooms/:id` | Supprimer un salon (modérateur ou administrateur) |
 | GET | `/api/rooms/invitations/me` | Invitations de l'utilisateur connecté |
-| POST | `/api/rooms/:id/invitations` | Inviter un utilisateur (idempotent : aucun doublon si déjà membre ou invité) |
+| POST | `/api/rooms/:id/invitations` | Inviter un utilisateur dans un salon privé (modérateur ou administrateur, idempotent : aucun doublon si déjà membre ou invité) |
+| DELETE | `/api/rooms/:id/members/:userId` | Retirer un membre d'un salon (modérateur ou administrateur) |
 | POST | `/api/rooms/:id/invitations/accept` | Accepter une invitation |
 | POST | `/api/rooms/:id/invitations/refuse` | Refuser une invitation |
 | POST | `/api/rooms/:id/join` | Rejoindre un salon |
 | POST | `/api/rooms/:id/leave` | Quitter un salon |
 | GET | `/api/health` | Vérifier le service et PostgreSQL |
 
-Le panneau d’administration utilise `GET /api/admin/rooms` pour voir tous les salons, publics et privés. Pour supprimer un salon, un administrateur peut utiliser `DELETE /api/rooms/:id`, qui autorise l’hôte du salon ou le rôle `admin`.
+Le panneau d’administration utilise `GET /api/admin/rooms` pour voir tous les salons, publics et privés. Pour supprimer un salon, `DELETE /api/rooms/:id` est ouvert à tout `moderateur` ou `admin`, quel que soit le créateur du salon.
 
 ## Permissions
 
-- Le créateur d'un salon devient automatiquement son hôte et son premier membre.
-- Seul l'hôte ou un administrateur peut modifier ou supprimer un salon.
-- Un administrateur peut lister tous les salons via `GET /api/admin/rooms`; `moderateur` et `utilisateur` reçoivent 403.
-- Seul l'hôte ou un administrateur peut inviter dans un salon privé.
-- Un utilisateur peut rejoindre librement un salon public.
-- Un utilisateur doit être invité pour rejoindre un salon privé.
-- L'hôte ne peut pas quitter son propre salon; il doit supprimer le salon.
+Depuis ce changement, l'autorisation ne repose plus sur un concept d'« hôte » propre à chaque salon : elle dépend uniquement du **rôle global** de l'appelant, renvoyé par le service Auth (`request.user.role`), et s'applique de façon identique sur tous les salons, peu importe qui les a créés.
+
+- `utilisateur` : peut lister/consulter les salons, rejoindre un salon public, accepter ou refuser les invitations qui lui sont adressées, et quitter n'importe quel salon dont il est membre (y compris un salon qu'il a créé). Il ne peut **pas** créer, renommer, changer la visibilité, supprimer, inviter dans, ou retirer un membre d'un salon.
+- `moderateur` : peut créer un salon, supprimer n'importe quel salon, renommer ou changer la visibilité de n'importe quel salon, inviter un membre dans un salon privé, et retirer un membre d'un salon — sur n'importe quel salon, qu'il l'ait créé ou non.
+- `admin` : peut tout ce qu'un `moderateur` peut faire, sur tous les salons, en plus de lister tous les salons via `GET /api/admin/rooms`.
+- Le champ `creePar` retourné dans la réponse d'un salon est purement informationnel (qui a créé le salon) : il n'accorde plus aucun droit particulier.
+- Un utilisateur doit être invité pour rejoindre un salon privé; il peut rejoindre librement un salon public.
+- N'importe quel membre, y compris le créateur du salon, peut quitter le salon à tout moment via `POST /api/rooms/:id/leave`.
 
 ## Installation locale
 
@@ -166,10 +168,12 @@ CORS_ORIGINS="http://localhost:5173"
 
 ## Exemple — créer un salon
 
+La création d'un salon requiert un JWT dont le rôle global est `moderateur` ou `admin`; un `utilisateur` reçoit 403.
+
 ```bash
 curl -X POST http://localhost:3003/api/rooms \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <JWT_USER_1>" \
+  -H "Authorization: Bearer <JWT_MODERATEUR_1>" \
   -d '{"nom":"general","visibilite":"public"}'
 ```
 
@@ -181,29 +185,29 @@ Réponse :
   "id": "...",
   "nom": "general",
   "visibilite": "public",
-  "hoteId": "user-1",
-  "membreIds": ["user-1"],
+  "creePar": "moderateur-1",
+  "membreIds": ["moderateur-1"],
   "membresInvites": []
 }
 ```
 
 ## Exemple — salon privé et invitation
 
-Créer le salon :
+Créer le salon (toujours réservé à `moderateur`/`admin`) :
 
 ```bash
 curl -X POST http://localhost:3003/api/rooms \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <JWT_USER_1>" \
+  -H "Authorization: Bearer <JWT_MODERATEUR_1>" \
   -d '{"nom":"equipe-privee","visibilite":"prive"}'
 ```
 
-Inviter un utilisateur :
+Inviter un utilisateur (réservé à `moderateur`/`admin`) :
 
 ```bash
 curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <JWT_USER_1>" \
+  -H "Authorization: Bearer <JWT_MODERATEUR_1>" \
   -d '{"utilisateurId":"user-2"}'
 ```
 
@@ -216,16 +220,23 @@ curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations/accept \
   -H "Authorization: Bearer <JWT_USER_2>"
 ```
 
+Retirer un membre d'un salon (réservé à `moderateur`/`admin`) :
+
+```bash
+curl -X DELETE http://localhost:3003/api/rooms/<ROOM_ID>/members/user-2 \
+  -H "Authorization: Bearer <JWT_MODERATEUR_1>"
+```
+
 ## Base de données
 
-Le service possède trois modèles :
+Le service possède trois modèles. `Room.createdBy` est purement informationnel (qui a créé le salon, pour affichage éventuel) et n'est utilisé dans aucun contrôle d'autorisation; l'autorisation repose uniquement sur le rôle global de l'appelant (voir [Permissions](#permissions)).
 
 ```text
 Room
 ├── id
 ├── name
 ├── visibility
-├── ownerId
+├── createdBy
 ├── createdAt
 └── updatedAt
 

@@ -5,10 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ServerRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateServerDto, UpdateServerDto } from './dto/create-server.dto';
 import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
+import { LIMITE_MEMBRES_DEFAUT } from './dto/member.dto';
 import { EvenementsService } from './evenements.service';
 import {
   Acteur,
@@ -22,7 +23,7 @@ import {
 } from './permissions';
 import {
   InvitationResponse,
-  MembreResponse,
+  PageMembresResponse,
   SalonResponse,
   ServeurResponse,
   ServeurResumeResponse,
@@ -37,7 +38,20 @@ export const serveurInclude = {
   channels: {
     orderBy: [{ position: 'asc' as const }, { createdAt: 'asc' as const }],
   },
+  _count: { select: { members: true } },
 } satisfies Prisma.ServerInclude;
+
+/**
+ * Même forme que serveurInclude, mais sans charger tous les membres : seule
+ * la ligne de l'appelant (pour son rôle). Pour les lectures, où la liste
+ * complète ne sert pas (voir listerMembres).
+ */
+function serveurIncludeLecture(utilisateurId: string) {
+  return {
+    ...serveurInclude,
+    members: { where: { userId: utilisateurId } },
+  } satisfies Prisma.ServerInclude;
+}
 
 export type ServeurComplet = Prisma.ServerGetPayload<{
   include: typeof serveurInclude;
@@ -81,7 +95,7 @@ export class ServersService {
 
     const serveurs = await this.prisma.server.findMany({
       where: { members: { some: { userId: acteur.id } } },
-      include: serveurInclude,
+      include: serveurIncludeLecture(acteur.id),
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
     });
     return serveurs.map((serveur) =>
@@ -114,8 +128,91 @@ export class ServersService {
    * public, 404 pour un serveur privé (son existence n'est pas révélée).
    */
   async obtenir(id: string, acteur: Acteur): Promise<ServeurResponse> {
-    const { serveur, role } = await this.contexteVisible(id, acteur);
+    const serveur = await this.prisma.server.findUnique({
+      where: { id },
+      include: serveurIncludeLecture(acteur.id),
+    });
+    const role = serveur ? this.roleDe(serveur, acteur) : null;
+    if (!serveur || (role === null && !serveur.isPublic)) {
+      throw new NotFoundException(`Serveur ${id} non trouvé`);
+    }
     return this.versReponse(serveur, role);
+  }
+
+  /**
+   * Membres d'un serveur, par pages : le propriétaire en tête, puis les
+   * modérateurs, puis les membres, par ancienneté. Avec `ids`, seulement ces
+   * utilisateurs (sans pagination). Réservé aux membres.
+   */
+  async listerMembres(
+    id: string,
+    acteur: Acteur,
+    options: { decalage?: number; limite?: number; ids?: string[] } = {},
+  ): Promise<PageMembresResponse> {
+    const serveur = await this.prisma.server.findUnique({
+      where: { id },
+      include: { members: { where: { userId: acteur.id } } },
+    });
+    const role = serveur ? this.roleDe(serveur, acteur) : null;
+    if (!serveur || (role === null && !serveur.isPublic)) {
+      throw new NotFoundException(`Serveur ${id} non trouvé`);
+    }
+    this.exiger(role !== null, 'Réservé aux membres du serveur');
+
+    const versMembre = (membre: { userId: string; role: ServerRole }) => ({
+      utilisateurId: membre.userId,
+      role:
+        membre.userId === serveur.ownerId
+          ? ('proprietaire' as const)
+          : membre.role,
+    });
+
+    if (options.ids) {
+      const membres = await this.prisma.serverMember.findMany({
+        where: { serverId: id, userId: { in: options.ids } },
+        orderBy: { joinedAt: 'asc' },
+      });
+      return {
+        membres: membres.map(versMembre),
+        total: membres.length,
+        suivant: null,
+      };
+    }
+
+    const decalage = options.decalage ?? 0;
+    const limite = options.limite ?? LIMITE_MEMBRES_DEFAUT;
+    // Le propriétaire est à part (tête de la première page) : son rôle en
+    // base ne le distingue pas des autres.
+    const proprietaire =
+      serveur.ownerId === null
+        ? null
+        : await this.prisma.serverMember.findUnique({
+            where: {
+              serverId_userId: { serverId: id, userId: serveur.ownerId },
+            },
+          });
+    const autres = { serverId: id, userId: { not: serveur.ownerId ?? '' } };
+    const enTete = proprietaire ? 1 : 0;
+    const [total, page] = await Promise.all([
+      this.prisma.serverMember.count({ where: autres }),
+      this.prisma.serverMember.findMany({
+        where: autres,
+        // 'moderateur' > 'membre' : les modérateurs d'abord.
+        orderBy: [{ role: 'desc' }, { joinedAt: 'asc' }, { userId: 'asc' }],
+        skip: Math.max(decalage - enTete, 0),
+        take: decalage === 0 ? limite - enTete : limite,
+      }),
+    ]);
+    const membres = [
+      ...(decalage === 0 && proprietaire ? [proprietaire] : []),
+      ...page,
+    ].map(versMembre);
+    const fin = decalage + membres.length;
+    return {
+      membres,
+      total: total + enTete,
+      suivant: fin < total + enTete ? fin : null,
+    };
   }
 
   async listerPourAdmin(acteur: Acteur): Promise<ServeurResumeResponse[]> {
@@ -450,7 +547,14 @@ export class ServersService {
     return serveur.members.map((membre) => membre.userId);
   }
 
-  private roleDe(serveur: ServeurComplet, acteur: Acteur): RoleServeur | null {
+  private roleDe(
+    serveur: {
+      ownerId: string | null;
+      isDefault: boolean;
+      members: { userId: string; role: ServerRole }[];
+    },
+    acteur: Acteur,
+  ): RoleServeur | null {
     const membre = serveur.members.find((item) => item.userId === acteur.id);
     return roleEffectif(serveur, membre, acteur);
   }
@@ -485,11 +589,6 @@ export class ServersService {
     serveur: ServeurComplet,
     role: RoleServeur | null,
   ): ServeurResponse {
-    const estMembre = role !== null;
-    const membres: MembreResponse[] = serveur.members.map((membre) => ({
-      utilisateurId: membre.userId,
-      role: membre.userId === serveur.ownerId ? 'proprietaire' : membre.role,
-    }));
     return {
       type: 'serveur',
       id: serveur.id,
@@ -499,11 +598,10 @@ export class ServersService {
       parDefaut: serveur.isDefault,
       proprietaireId: serveur.ownerId,
       monRole: role,
-      nombreMembres: serveur.members.length,
+      nombreMembres: serveur._count.members,
       salons: serveur.channels
         .filter((salon) => peutVoirSalon(role, salon))
         .map((salon) => this.versSalon(salon, role)),
-      membres: estMembre ? membres : [],
       invitations: peutModerer(role)
         ? serveur.invitations.map((invitation) => invitation.userId)
         : [],

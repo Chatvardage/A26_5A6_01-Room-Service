@@ -31,10 +31,22 @@ Format d'un serveur :
   monRole: 'admin' | 'proprietaire' | 'moderateur' | 'membre' | null, // null = aperçu
   nombreMembres: number,
   salons: Salon[],                 // salons visibles par l'appelant
-  membres: { utilisateurId: string; role: 'proprietaire' | 'moderateur' | 'membre' }[],
   invitations: string[]            // en attente ; modérateurs et plus seulement
 }
 ```
+
+La liste des membres n'est **pas** incluse : tout le monde est membre du serveur par défaut, elle grossirait avec le nombre de comptes (et chaque inscription fait recharger la liste des serveurs à tous). Elle se lit par pages avec `GET /api/servers/:id/members` :
+
+```ts
+// ?decalage=0&limite=50 (100 au plus), ou ?ids=a,b,c (100 au plus, sans pagination)
+{
+  membres: { utilisateurId: string; role: 'proprietaire' | 'moderateur' | 'membre' }[],
+  total: number,
+  suivant: number | null           // decalage de la page suivante
+}
+```
+
+Ordre : le propriétaire en tête de la première page, puis les modérateurs, puis les membres, par ancienneté. `ids` sert à savoir lesquels de ces utilisateurs sont déjà membres (fenêtre « Inviter »).
 
 Format d'un salon :
 
@@ -78,6 +90,7 @@ Toutes les routes sont préfixées par `/api` et exigent un JWT, sauf mention co
 | GET | `/api/servers/decouvrir?q=` | connecté | Serveurs publics dont je ne suis pas membre (nom contenant `q`, 20 max) |
 | POST | `/api/servers` | connecté | Créer un serveur `{ nom, public? }` ; j'en deviens propriétaire |
 | GET | `/api/servers/:id` | membre (aperçu si public) | Détail ; 404 si privé et non-membre |
+| GET | `/api/servers/:id/members?decalage=&limite=&ids=` | membre | Membres par pages (voir ci-dessus) ; 403 si non-membre d'un serveur public |
 | PATCH | `/api/servers/:id` | propriétaire / admin | `{ nom?, public?, icone? }` (icône vide = retirée) ; Chatvardage reste public |
 | DELETE | `/api/servers/:id` | propriétaire / admin | Supprime le serveur et ses salons ; interdit pour Chatvardage |
 | POST | `/api/servers/:id/join` | connecté | Rejoindre un serveur public, ou privé si invité |

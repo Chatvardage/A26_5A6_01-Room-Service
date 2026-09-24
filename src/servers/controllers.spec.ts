@@ -32,6 +32,7 @@ describe('contrôleurs', () => {
       'mesInvitations',
       'creer',
       'obtenir',
+      'listerMembres',
       'modifier',
       'supprimer',
       'rejoindre',
@@ -62,6 +63,10 @@ describe('contrôleurs', () => {
     await c.creer({ nom: 'x' }, req);
     expect(servers.creer).toHaveBeenCalledWith({ nom: 'x' }, user);
     await c.obtenir('s', req);
+    await c.membres('s', { limite: 10 }, req);
+    expect(servers.listerMembres).toHaveBeenCalledWith('s', user, {
+      limite: 10,
+    });
     await c.modifier('s', { nom: 'y' }, req);
     await expect(c.supprimer('s', req)).resolves.toBeUndefined();
     await c.rejoindre('s', req);

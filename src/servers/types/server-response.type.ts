@@ -33,10 +33,20 @@ export interface ServeurResponse {
   nombreMembres: number;
   /** Salons visibles par l'appelant (vide pour un simple aperçu). */
   salons: SalonResponse[];
-  /** Membres (vide pour un simple aperçu). */
-  membres: MembreResponse[];
   /** Invitations en attente : visibles des modérateurs et plus seulement. */
   invitations: string[];
+}
+
+/**
+ * Une page de membres (GET /api/servers/:id/members). La liste complète
+ * n'est plus renvoyée avec le serveur : tout le monde est membre du serveur
+ * par défaut, elle grossissait avec le nombre de comptes.
+ */
+export interface PageMembresResponse {
+  membres: MembreResponse[];
+  total: number;
+  /** `decalage` de la page suivante, ou null s'il n'y en a plus. */
+  suivant: number | null;
 }
 
 export interface ServeurResumeResponse {

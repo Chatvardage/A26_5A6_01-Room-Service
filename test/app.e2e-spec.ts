@@ -64,6 +64,7 @@ describe('Room-Service : serveurs et salons (e2e)', () => {
     ],
     invitations: [],
     channels: [annonces],
+    _count: { members: 1 },
   };
 
   const requete = (
@@ -127,10 +128,15 @@ describe('Room-Service : serveurs et salons (e2e)', () => {
               writePolicy: 'tous',
             },
           ],
+          _count: { members: 1 },
         })),
         delete: jest.fn(),
       },
-      serverMember: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      serverMember: {
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue(chatvardage.members),
+        count: jest.fn().mockResolvedValue(1),
+      },
       room: {
         findUnique: jest.fn().mockImplementation(({ where, include }: any) => {
           if (where.id !== SALON_ANNONCES_ID) return null;
@@ -196,6 +202,41 @@ describe('Room-Service : serveurs et salons (e2e)', () => {
       monRole: 'membre',
       salons: [{ nom: 'annonces', ecriture: 'moderateurs', peutEcrire: false }],
     });
+  });
+
+  it('GET /api/servers/:id/members : page de membres, paramètres validés', async () => {
+    const reponse = await requete(
+      `/api/servers/${SERVEUR_PAR_DEFAUT_ID}/members?decalage=0&limite=10`,
+      { jeton: 'Bearer bob-jwt' },
+    );
+    expect(reponse.status).toBe(200);
+    await expect(reponse.json()).resolves.toEqual({
+      membres: [{ utilisateurId: 'bob', role: 'membre' }],
+      total: 1,
+      suivant: null,
+    });
+
+    const parIds = await requete(
+      `/api/servers/${SERVEUR_PAR_DEFAUT_ID}/members?ids=bob,%20bob,,autre`,
+      { jeton: 'Bearer bob-jwt' },
+    );
+    expect(parIds.status).toBe(200);
+    expect(prisma.serverMember.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: {
+          serverId: SERVEUR_PAR_DEFAUT_ID,
+          userId: { in: ['bob', 'autre'] },
+        },
+      }),
+    );
+
+    for (const requeteInvalide of ['limite=0', 'limite=101', 'decalage=-1']) {
+      const invalide = await requete(
+        `/api/servers/${SERVEUR_PAR_DEFAUT_ID}/members?${requeteInvalide}`,
+        { jeton: 'Bearer bob-jwt' },
+      );
+      expect(invalide.status).toBe(400);
+    }
   });
 
   it('POST /api/servers : tout utilisateur crée un serveur dont il est propriétaire', async () => {

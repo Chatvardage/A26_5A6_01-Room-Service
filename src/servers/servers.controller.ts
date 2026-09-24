@@ -25,6 +25,7 @@ import { CreateServerDto, UpdateServerDto } from './dto/create-server.dto';
 import {
   DiscoverServersQueryDto,
   InviteMemberDto,
+  ListMembersQueryDto,
   UpdateMemberRoleDto,
 } from './dto/member.dto';
 import { ServersService } from './servers.service';
@@ -78,6 +79,21 @@ export class ServersController {
   })
   obtenir(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.servers.obtenir(id, requireUser(request));
+  }
+
+  @Get(':id/members')
+  @ApiOperation({
+    summary: 'Membres du serveur, par pages (réservé aux membres)',
+    description:
+      'Propriétaire en tête, puis modérateurs, puis membres. Avec `ids`, ' +
+      'seulement ces utilisateurs : sert à savoir lesquels sont déjà membres.',
+  })
+  membres(
+    @Param('id') id: string,
+    @Query() query: ListMembersQueryDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.servers.listerMembres(id, requireUser(request), query);
   }
 
   @Patch(':id')

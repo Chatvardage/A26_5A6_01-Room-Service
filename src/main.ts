@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { verifierSecretsProduction } from './common/secrets-production';
 
 function validateCorsOrigin(origin: string): string {
   let parsedOrigin: URL;
@@ -71,6 +72,8 @@ export function resolveCorsOrigins(): string[] {
 }
 
 async function bootstrap() {
+  // Avant tout : pas de démarrage en production avec des secrets de dev.
+  verifierSecretsProduction();
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');

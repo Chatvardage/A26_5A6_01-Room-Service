@@ -61,35 +61,6 @@ describe('RoomAuthGuard', () => {
     );
   });
 
-  it('allows optional-auth routes anonymously when no Authorization header is present', async () => {
-    reflector.getAllAndOverride
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
-    delete request.headers.authorization;
-    const guard = new RoomAuthGuard(
-      auth as unknown as AuthService,
-      reflector as unknown as Reflector,
-    );
-
-    await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(auth.authenticate).not.toHaveBeenCalled();
-    expect(request.user).toBeUndefined();
-  });
-
-  it('authenticates optional-auth routes when a Bearer token is supplied', async () => {
-    reflector.getAllAndOverride
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
-    const guard = new RoomAuthGuard(
-      auth as unknown as AuthService,
-      reflector as unknown as Reflector,
-    );
-
-    await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(auth.authenticate).toHaveBeenCalledWith('Bearer jwt');
-    expect(request.user).toEqual(user);
-  });
-
   it('propagates authentication errors', async () => {
     auth.authenticate.mockRejectedValue(new UnauthorizedException('bad token'));
     const guard = new RoomAuthGuard(

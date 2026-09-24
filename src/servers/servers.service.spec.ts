@@ -1,0 +1,680 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
+import { ServersService } from './servers.service';
+
+const date = new Date('2026-01-01T00:00:00.000Z');
+
+const salon = (overrides: Record<string, unknown> = {}) => ({
+  id: 'salon-1',
+  serverId: 'srv-1',
+  name: 'général',
+  position: 0,
+  access: 'tous' as const,
+  writePolicy: 'tous' as const,
+  createdBy: 'owner',
+  createdAt: date,
+  updatedAt: date,
+  ...overrides,
+});
+
+const membre = (userId: string, role: 'membre' | 'moderateur' = 'membre') => ({
+  serverId: 'srv-1',
+  userId,
+  role,
+  joinedAt: date,
+});
+
+const makeServeur = (overrides: Record<string, unknown> = {}) => ({
+  id: 'srv-1',
+  name: 'Projet',
+  icon: null,
+  ownerId: 'owner',
+  isPublic: false,
+  isDefault: false,
+  createdAt: date,
+  updatedAt: date,
+  members: [membre('owner'), membre('modo', 'moderateur'), membre('bob')],
+  invitations: [
+    { serverId: 'srv-1', userId: 'invite', invitedBy: 'bob', invitedAt: date },
+  ],
+  channels: [
+    salon(),
+    salon({
+      id: 'salon-modos',
+      name: 'modos',
+      position: 1,
+      access: 'moderateurs',
+    }),
+  ],
+  ...overrides,
+});
+
+const parDefaut = () =>
+  makeServeur({
+    id: SERVEUR_PAR_DEFAUT_ID,
+    name: 'Chatvardage',
+    ownerId: null,
+    isPublic: true,
+    isDefault: true,
+    members: [membre('bob')],
+    invitations: [],
+  });
+
+const u = (id: string) => ({ id, role: 'utilisateur' as const });
+const admin = { id: 'root', role: 'admin' as const };
+
+describe('ServersService', () => {
+  let service: ServersService;
+  let prisma: any;
+  let evenements: { notifier: jest.Mock };
+
+  beforeEach(() => {
+    prisma = {
+      server: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      serverMember: {
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        upsert: jest.fn(),
+        create: jest.fn(),
+        delete: jest.fn(),
+        update: jest.fn(),
+      },
+      serverInvitation: {
+        create: jest.fn(),
+        delete: jest.fn(),
+        deleteMany: jest.fn(),
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+      },
+      $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
+    };
+    evenements = { notifier: jest.fn() };
+    service = new ServersService(prisma as PrismaService, evenements as any);
+  });
+
+  describe('lecture', () => {
+    it("listerMesServeurs ajoute l'appelant au serveur par défaut puis liste ses serveurs", async () => {
+      prisma.server.findMany.mockResolvedValue([parDefaut(), makeServeur()]);
+
+      const serveurs = await service.listerMesServeurs(u('bob'));
+
+      expect(prisma.serverMember.createMany).toHaveBeenCalledWith({
+        data: [{ serverId: SERVEUR_PAR_DEFAUT_ID, userId: 'bob' }],
+        skipDuplicates: true,
+      });
+      // Déjà membre (count 0) : personne n'est prévenu.
+      expect(evenements.notifier).not.toHaveBeenCalled();
+      expect(prisma.server.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { members: { some: { userId: 'bob' } } },
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        }),
+      );
+      expect(serveurs.map((s) => [s.nom, s.monRole])).toEqual([
+        ['Chatvardage', 'membre'],
+        ['Projet', 'membre'],
+      ]);
+    });
+
+    it('nouveau membre de Chatvardage : les autres membres sont prévenus', async () => {
+      prisma.serverMember.createMany.mockResolvedValue({ count: 1 });
+      prisma.server.findMany.mockResolvedValue([parDefaut()]);
+      await service.listerMesServeurs(u('neuf'));
+      expect(evenements.notifier).toHaveBeenCalledWith(
+        SERVEUR_PAR_DEFAUT_ID,
+        'membres',
+        { cibleId: 'neuf' },
+      );
+    });
+
+    it('un membre ne voit ni le salon des modérateurs ni les invitations', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      const serveur = await service.obtenir('srv-1', u('bob'));
+      expect(serveur.salons.map((s) => s.id)).toEqual(['salon-1']);
+      expect(serveur.invitations).toEqual([]);
+      expect(serveur.membres).toEqual([
+        { utilisateurId: 'owner', role: 'proprietaire' },
+        { utilisateurId: 'modo', role: 'moderateur' },
+        { utilisateurId: 'bob', role: 'membre' },
+      ]);
+      expect(serveur.salons[0]).toEqual({
+        type: 'salon',
+        id: 'salon-1',
+        serveurId: 'srv-1',
+        nom: 'général',
+        position: 0,
+        acces: 'tous',
+        ecriture: 'tous',
+        peutEcrire: true,
+        creePar: 'owner',
+      });
+    });
+
+    it('un modérateur voit tout, invitations comprises', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      const serveur = await service.obtenir('srv-1', u('modo'));
+      expect(serveur.salons).toHaveLength(2);
+      expect(serveur.invitations).toEqual(['invite']);
+    });
+
+    it('serveur public, non-membre : simple aperçu', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ isPublic: true }),
+      );
+      const serveur = await service.obtenir('srv-1', u('inconnu'));
+      expect(serveur).toMatchObject({
+        monRole: null,
+        salons: [],
+        membres: [],
+        invitations: [],
+        nombreMembres: 3,
+      });
+    });
+
+    it('serveur privé, non-membre : 404 (existence non révélée)', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(service.obtenir('srv-1', u('inconnu'))).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('serveur inexistant : 404', async () => {
+      prisma.server.findUnique.mockResolvedValue(null);
+      await expect(service.obtenir('x', u('bob'))).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('decouvrir filtre les serveurs publics non rejoints, par nom', async () => {
+      prisma.server.findMany.mockResolvedValue([
+        { ...makeServeur({ isPublic: true }), _count: { members: 3 } },
+      ]);
+      await expect(service.decouvrir(u('bob'), 'pro')).resolves.toEqual([
+        {
+          type: 'serveur',
+          id: 'srv-1',
+          nom: 'Projet',
+          icone: null,
+          public: true,
+          nombreMembres: 3,
+        },
+      ]);
+      expect(prisma.server.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            isPublic: true,
+            members: { none: { userId: 'bob' } },
+            name: { contains: 'pro', mode: 'insensitive' },
+          },
+          take: 20,
+        }),
+      );
+    });
+
+    it('decouvrir sans texte ne filtre pas sur le nom', async () => {
+      prisma.server.findMany.mockResolvedValue([]);
+      await service.decouvrir(u('bob'));
+      expect(prisma.server.findMany.mock.calls[0][0].where).toEqual({
+        isPublic: true,
+        members: { none: { userId: 'bob' } },
+      });
+    });
+
+    it('listerPourAdmin : réservé aux administrateurs', async () => {
+      prisma.server.findMany.mockResolvedValue([
+        { ...makeServeur(), _count: { members: 3 } },
+      ]);
+      await expect(service.listerPourAdmin(admin)).resolves.toHaveLength(1);
+      await expect(service.listerPourAdmin(u('bob'))).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
+
+  describe('création et modification', () => {
+    it("creer rend l'appelant propriétaire avec un salon #général (privé par défaut)", async () => {
+      prisma.server.create.mockResolvedValue(
+        makeServeur({
+          ownerId: 'bob',
+          members: [membre('bob')],
+          invitations: [],
+        }),
+      );
+      const serveur = await service.creer({ nom: 'Projet' }, u('bob'));
+      expect(prisma.server.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            name: 'Projet',
+            isPublic: false,
+            ownerId: 'bob',
+            members: { create: { userId: 'bob' } },
+            channels: {
+              create: { name: 'général', position: 0, createdBy: 'bob' },
+            },
+          },
+        }),
+      );
+      expect(serveur.monRole).toBe('proprietaire');
+    });
+
+    it('creer un serveur public', async () => {
+      prisma.server.create.mockResolvedValue(makeServeur({ isPublic: true }));
+      await service.creer({ nom: 'Ouvert', public: true }, u('owner'));
+      expect(prisma.server.create.mock.calls[0][0].data.isPublic).toBe(true);
+    });
+
+    it('modifier : propriétaire seulement', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(
+        service.modifier('srv-1', { nom: 'x' }, u('modo')),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('modifier sans champ : 400', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(service.modifier('srv-1', {}, u('owner'))).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('modifier nom, visibilité et retirer l’icône (chaîne vide)', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      prisma.server.update.mockResolvedValue(makeServeur({ name: 'Nouveau' }));
+      await service.modifier(
+        'srv-1',
+        { nom: 'Nouveau', public: true, icone: '' },
+        u('owner'),
+      );
+      expect(prisma.server.update.mock.calls[0][0].data).toEqual({
+        name: 'Nouveau',
+        isPublic: true,
+        icon: null,
+      });
+    });
+
+    it('modifier seulement l’icône', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      prisma.server.update.mockResolvedValue(makeServeur());
+      await service.modifier(
+        'srv-1',
+        { icone: 'data:image/png;base64,AA==' },
+        u('owner'),
+      );
+      expect(prisma.server.update.mock.calls[0][0].data).toEqual({
+        icon: 'data:image/png;base64,AA==',
+      });
+    });
+
+    it('le serveur par défaut reste public, mais un admin peut le renommer', async () => {
+      prisma.server.findUnique.mockResolvedValue(parDefaut());
+      await expect(
+        service.modifier(SERVEUR_PAR_DEFAUT_ID, { public: false }, admin),
+      ).rejects.toThrow(BadRequestException);
+
+      prisma.server.update.mockResolvedValue(parDefaut());
+      await service.modifier(SERVEUR_PAR_DEFAUT_ID, { nom: 'Accueil' }, admin);
+      expect(prisma.server.update).toHaveBeenCalled();
+    });
+
+    it('supprimer : propriétaire seulement, jamais le serveur par défaut', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(service.supprimer('srv-1', u('bob'))).rejects.toThrow(
+        ForbiddenException,
+      );
+      await service.supprimer('srv-1', u('owner'));
+      expect(prisma.server.delete).toHaveBeenCalledWith({
+        where: { id: 'srv-1' },
+      });
+
+      prisma.server.findUnique.mockResolvedValue(parDefaut());
+      await expect(
+        service.supprimer(SERVEUR_PAR_DEFAUT_ID, admin),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('appartenance', () => {
+    it('rejoindre un serveur dont on est déjà membre ne change rien', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await service.rejoindre('srv-1', u('bob'));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejoindre un serveur privé sans invitation : 404', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(service.rejoindre('srv-1', u('inconnu'))).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it.each([
+      ['public', { isPublic: true }, 'inconnu'],
+      ['privé sur invitation', {}, 'invite'],
+    ])('rejoindre un serveur %s', async (_cas, overrides, qui) => {
+      prisma.server.findUnique
+        .mockResolvedValueOnce(makeServeur(overrides))
+        .mockResolvedValueOnce(
+          makeServeur({
+            ...overrides,
+            members: [membre('owner'), membre(qui)],
+          }),
+        );
+      prisma.serverMember.createMany.mockResolvedValue({ count: 1 });
+      await service.rejoindre('srv-1', u(qui));
+      expect(prisma.serverMember.createMany).toHaveBeenCalledWith({
+        data: [{ serverId: 'srv-1', userId: qui }],
+        skipDuplicates: true,
+      });
+      expect(prisma.serverInvitation.deleteMany).toHaveBeenCalledWith({
+        where: { serverId: 'srv-1', userId: qui },
+      });
+    });
+
+    it('rejoindre deux fois en même temps : pas d’erreur, une seule notification', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ isPublic: true }),
+      );
+      // La requête concurrente a déjà créé le membre : rien n'est inséré.
+      prisma.serverMember.createMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.rejoindre('srv-1', u('neuf')),
+      ).resolves.toBeDefined();
+      expect(evenements.notifier).not.toHaveBeenCalled();
+    });
+
+    it('quitter : interdit pour le serveur par défaut et le propriétaire', async () => {
+      prisma.server.findUnique.mockResolvedValue(parDefaut());
+      await expect(
+        service.quitter(SERVEUR_PAR_DEFAUT_ID, u('bob')),
+      ).rejects.toThrow(BadRequestException);
+
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(service.quitter('srv-1', u('owner'))).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('quitter sans être membre : 409 ; sinon supprime le membre', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(service.quitter('srv-1', u('inconnu'))).rejects.toThrow(
+        ConflictException,
+      );
+      await service.quitter('srv-1', u('bob'));
+      expect(prisma.serverMember.delete).toHaveBeenCalledWith({
+        where: { serverId_userId: { serverId: 'srv-1', userId: 'bob' } },
+      });
+    });
+
+    it('expulser : interdit dans le serveur par défaut', async () => {
+      prisma.server.findUnique.mockResolvedValue(parDefaut());
+      await expect(
+        service.expulser(SERVEUR_PAR_DEFAUT_ID, 'bob', admin),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('expulser un non-membre : 404', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(
+        service.expulser('srv-1', 'inconnu', u('owner')),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('un modérateur ne peut pas expulser le propriétaire ni un autre modérateur', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({
+          members: [
+            membre('owner'),
+            membre('modo', 'moderateur'),
+            membre('modo2', 'moderateur'),
+          ],
+        }),
+      );
+      await expect(
+        service.expulser('srv-1', 'owner', u('modo')),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.expulser('srv-1', 'modo2', u('modo')),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('un modérateur expulse un membre', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await service.expulser('srv-1', 'bob', u('modo'));
+      expect(prisma.serverMember.delete).toHaveBeenCalledWith({
+        where: { serverId_userId: { serverId: 'srv-1', userId: 'bob' } },
+      });
+    });
+
+    it('changerRole : propriétaire seulement, cible membre, pas le propriétaire', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(
+        service.changerRole('srv-1', 'bob', 'moderateur', u('modo')),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.changerRole('srv-1', 'inconnu', 'moderateur', u('owner')),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.changerRole('srv-1', 'owner', 'membre', admin),
+      ).rejects.toThrow(BadRequestException);
+
+      await service.changerRole('srv-1', 'bob', 'moderateur', u('owner'));
+      expect(prisma.serverMember.update).toHaveBeenCalledWith({
+        where: { serverId_userId: { serverId: 'srv-1', userId: 'bob' } },
+        data: { role: 'moderateur' },
+      });
+    });
+  });
+
+  describe('invitations', () => {
+    it('inviter : interdit dans le serveur par défaut', async () => {
+      prisma.server.findUnique.mockResolvedValue(parDefaut());
+      await expect(
+        service.inviter(SERVEUR_PAR_DEFAUT_ID, 'x', u('bob')),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('inviter : il faut être membre (aperçu public insuffisant)', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ isPublic: true }),
+      );
+      await expect(service.inviter('srv-1', 'x', u('inconnu'))).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('inviter un membre existant : 409', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(
+        service.inviter('srv-1', 'owner', u('modo')),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('inviter est idempotent', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await service.inviter('srv-1', 'invite', u('modo'));
+      expect(prisma.serverInvitation.create).not.toHaveBeenCalled();
+    });
+
+    it('un simple membre ne peut pas inviter', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await expect(
+        service.inviter('srv-1', 'nouveau', u('bob')),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.serverInvitation.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['modo', 'owner'])('%s peut inviter', async (qui) => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await service.inviter('srv-1', 'nouveau', u(qui));
+      expect(prisma.serverInvitation.create).toHaveBeenCalledWith({
+        data: { serverId: 'srv-1', userId: 'nouveau', invitedBy: qui },
+      });
+    });
+
+    it('mesInvitations', async () => {
+      prisma.serverInvitation.findMany.mockResolvedValue([
+        {
+          serverId: 'srv-1',
+          userId: 'invite',
+          invitedBy: 'bob',
+          invitedAt: date,
+          server: { ...makeServeur(), _count: { members: 3 } },
+        },
+      ]);
+      await expect(service.mesInvitations(u('invite'))).resolves.toEqual([
+        {
+          serveur: {
+            type: 'serveur',
+            id: 'srv-1',
+            nom: 'Projet',
+            icone: null,
+            public: false,
+            nombreMembres: 3,
+          },
+          invitePar: 'bob',
+          inviteLe: date.toISOString(),
+        },
+      ]);
+    });
+
+    it('accepter / refuser sans invitation : 404', async () => {
+      prisma.serverInvitation.findUnique.mockResolvedValue(null);
+      await expect(service.accepterInvitation('srv-1', u('x'))).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.refuserInvitation('srv-1', u('x'))).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('accepter : devient membre et supprime l’invitation', async () => {
+      prisma.serverInvitation.findUnique.mockResolvedValue({
+        userId: 'invite',
+      });
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ members: [membre('owner'), membre('invite')] }),
+      );
+      const serveur = await service.accepterInvitation('srv-1', u('invite'));
+      expect(prisma.serverInvitation.delete).toHaveBeenCalled();
+      expect(prisma.serverMember.upsert).toHaveBeenCalled();
+      expect(serveur.monRole).toBe('membre');
+    });
+
+    it('refuser : supprime l’invitation', async () => {
+      prisma.serverInvitation.findUnique.mockResolvedValue({
+        userId: 'invite',
+      });
+      await service.refuserInvitation('srv-1', u('invite'));
+      expect(prisma.serverInvitation.delete).toHaveBeenCalledWith({
+        where: { serverId_userId: { serverId: 'srv-1', userId: 'invite' } },
+      });
+    });
+  });
+
+  describe('temps réel (notifications aux membres)', () => {
+    const membresAvant = ['owner', 'modo', 'bob'];
+
+    it('modifier : tous les membres', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      prisma.server.update.mockResolvedValue(makeServeur());
+      await service.modifier('srv-1', { nom: 'x' }, u('owner'));
+      expect(evenements.notifier).toHaveBeenCalledWith('srv-1', 'modifie', {
+        destinataires: membresAvant,
+      });
+    });
+
+    it('supprimer : les membres d’avant la suppression', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await service.supprimer('srv-1', u('owner'));
+      expect(evenements.notifier).toHaveBeenCalledWith('srv-1', 'supprime', {
+        destinataires: membresAvant,
+      });
+    });
+
+    it('expulser : l’expulsé est prévenu avec les autres', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await service.expulser('srv-1', 'bob', u('modo'));
+      expect(evenements.notifier).toHaveBeenCalledWith('srv-1', 'expulse', {
+        destinataires: membresAvant,
+        cibleId: 'bob',
+      });
+    });
+
+    it('inviter : l’invité s’ajoute aux destinataires (pas si déjà invité)', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await service.inviter('srv-1', 'nouveau', u('modo'));
+      expect(evenements.notifier).toHaveBeenCalledWith('srv-1', 'invitation', {
+        destinataires: membresAvant,
+        extras: ['nouveau'],
+        cibleId: 'nouveau',
+      });
+      evenements.notifier.mockClear();
+      await service.inviter('srv-1', 'invite', u('modo'));
+      expect(evenements.notifier).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['quitter', (s: ServersService) => s.quitter('srv-1', u('bob')), 'bob'],
+      [
+        'changerRole',
+        (s: ServersService) =>
+          s.changerRole('srv-1', 'bob', 'moderateur', u('owner')),
+        'bob',
+      ],
+    ])(
+      '%s : membres, avec la personne concernée',
+      async (_nom, action, cible) => {
+        prisma.server.findUnique.mockResolvedValue(makeServeur());
+        await action(service);
+        expect(evenements.notifier).toHaveBeenCalledWith('srv-1', 'membres', {
+          destinataires: membresAvant,
+          cibleId: cible,
+        });
+      },
+    );
+
+    it('rejoindre : membres d’avant + le nouveau (cible)', async () => {
+      prisma.server.findUnique
+        .mockResolvedValueOnce(makeServeur({ isPublic: true }))
+        .mockResolvedValueOnce(
+          makeServeur({
+            isPublic: true,
+            members: [membre('owner'), membre('neuf')],
+          }),
+        );
+      prisma.serverMember.createMany.mockResolvedValue({ count: 1 });
+      await service.rejoindre('srv-1', u('neuf'));
+      expect(evenements.notifier).toHaveBeenCalledWith('srv-1', 'membres', {
+        destinataires: membresAvant,
+        cibleId: 'neuf',
+      });
+    });
+
+    it('accepter / refuser une invitation : membres actuels (chargés par le notificateur)', async () => {
+      prisma.serverInvitation.findUnique.mockResolvedValue({
+        userId: 'invite',
+      });
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ members: [membre('owner'), membre('invite')] }),
+      );
+      await service.accepterInvitation('srv-1', u('invite'));
+      await service.refuserInvitation('srv-1', u('invite'));
+      expect(evenements.notifier.mock.calls).toEqual([
+        ['srv-1', 'membres', { cibleId: 'invite' }],
+        ['srv-1', 'membres', { cibleId: 'invite' }],
+      ]);
+    });
+  });
+});

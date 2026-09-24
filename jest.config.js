@@ -7,7 +7,7 @@ module.exports = {
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.spec.ts',
-    '!src/rooms/types/room-response.type.ts',
+    '!src/servers/types/server-response.type.ts',
   ],
   coverageDirectory: 'coverage',
   testEnvironment: 'node',

@@ -1,32 +1,98 @@
+import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { AppModule } from './app.module';
-import { AuthModule } from './auth/auth.module';
-import { PrismaModule } from './prisma/prisma.module';
-import { RoomsModule } from './rooms/rooms.module';
-import { CreateRoomDto } from './rooms/dto/create-room.dto';
-import { InviteMemberDto } from './rooms/dto/invite-member.dto';
-import { UpdateRoomDto } from './rooms/dto/update-room.dto';
+import { AccesQueryDto } from './internal/internal.controller';
+import { CreateChannelDto, UpdateChannelDto } from './servers/dto/channel.dto';
+import {
+  CreateServerDto,
+  UpdateServerDto,
+} from './servers/dto/create-server.dto';
+import {
+  DiscoverServersQueryDto,
+  InviteMemberDto,
+  UpdateMemberRoleDto,
+} from './servers/dto/member.dto';
+import { ServersModule } from './servers/servers.module';
+
+const erreurs = async <T extends object>(
+  classe: new () => T,
+  valeurs: Record<string, unknown>,
+) =>
+  (await validate(plainToInstance(classe, valeurs))).map(
+    (erreur) => erreur.property,
+  );
 
 describe('modules et DTO', () => {
   it('sont chargeables', () => {
     expect(AppModule).toBeDefined();
-    expect(AuthModule).toBeDefined();
-    expect(PrismaModule).toBeDefined();
-    expect(RoomsModule).toBeDefined();
-    expect(new CreateRoomDto()).toBeInstanceOf(CreateRoomDto);
-    expect(new UpdateRoomDto()).toBeInstanceOf(UpdateRoomDto);
-    expect(new InviteMemberDto()).toBeInstanceOf(InviteMemberDto);
+    expect(ServersModule).toBeDefined();
   });
 
-  it('rejette les noms composés uniquement d’espaces', async () => {
-    const createDto = Object.assign(new CreateRoomDto(), { nom: '   ' });
-    const updateDto = Object.assign(new UpdateRoomDto(), { nom: '\t  ' });
+  it('CreateServerDto : nom requis, retiré de ses espaces, 80 caractères max', async () => {
+    expect(await erreurs(CreateServerDto, { nom: 'Projet' })).toEqual([]);
+    expect(await erreurs(CreateServerDto, { nom: '   ' })).toEqual(['nom']);
+    expect(await erreurs(CreateServerDto, { nom: 'a'.repeat(81) })).toEqual([
+      'nom',
+    ]);
+    expect(await erreurs(CreateServerDto, { nom: 42 })).toEqual(['nom']);
+    expect(await erreurs(CreateServerDto, { nom: 'x', public: 'oui' })).toEqual(
+      ['public'],
+    );
+    expect(plainToInstance(CreateServerDto, { nom: '  Projet ' }).nom).toBe(
+      'Projet',
+    );
+  });
 
-    await expect(validate(createDto)).resolves.toEqual(
-      expect.arrayContaining([expect.objectContaining({ property: 'nom' })]),
+  it('UpdateServerDto : icône en data URL matricielle ou vide', async () => {
+    expect(await erreurs(UpdateServerDto, {})).toEqual([]);
+    expect(
+      await erreurs(UpdateServerDto, {
+        icone: 'data:image/png;base64,iVBORw0KGgo=',
+      }),
+    ).toEqual([]);
+    expect(await erreurs(UpdateServerDto, { icone: '' })).toEqual([]);
+    expect(
+      await erreurs(UpdateServerDto, {
+        icone: 'data:image/svg+xml;base64,PHN2Zz4=',
+      }),
+    ).toEqual(['icone']);
+    expect(await erreurs(UpdateServerDto, { nom: ' ' })).toEqual(['nom']);
+  });
+
+  it('CreateChannelDto / UpdateChannelDto : niveaux et position bornés', async () => {
+    expect(
+      await erreurs(CreateChannelDto, {
+        nom: 'modos',
+        acces: 'moderateurs',
+        ecriture: 'moderateurs',
+      }),
+    ).toEqual([]);
+    expect(
+      await erreurs(CreateChannelDto, { nom: 'x', acces: 'amis' }),
+    ).toEqual(['acces']);
+    expect(await erreurs(UpdateChannelDto, { position: 3 })).toEqual([]);
+    expect(await erreurs(UpdateChannelDto, { position: -1 })).toEqual([
+      'position',
+    ]);
+    expect(await erreurs(UpdateChannelDto, { nom: 7 })).toEqual(['nom']);
+  });
+
+  it('DTO de membres et de recherche', async () => {
+    expect(await erreurs(InviteMemberDto, { utilisateurId: 'u2' })).toEqual([]);
+    expect(await erreurs(InviteMemberDto, { utilisateurId: '' })).toEqual([
+      'utilisateurId',
+    ]);
+    expect(await erreurs(UpdateMemberRoleDto, { role: 'moderateur' })).toEqual(
+      [],
     );
-    await expect(validate(updateDto)).resolves.toEqual(
-      expect.arrayContaining([expect.objectContaining({ property: 'nom' })]),
+    expect(await erreurs(UpdateMemberRoleDto, { role: 'admin' })).toEqual([
+      'role',
+    ]);
+    expect(plainToInstance(DiscoverServersQueryDto, { q: ' pro ' }).q).toBe(
+      'pro',
     );
+    expect(await erreurs(DiscoverServersQueryDto, { q: 5 })).toEqual(['q']);
+    expect(await erreurs(AccesQueryDto, { role: 'admin' })).toEqual([]);
+    expect(await erreurs(AccesQueryDto, { role: 'root' })).toEqual(['role']);
   });
 });

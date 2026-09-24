@@ -7,162 +7,144 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import {
+  SALON_ANNONCES_ID,
+  SERVEUR_PAR_DEFAUT_ID,
+} from '../src/servers/default-server';
 
-describe('Rooms Service (e2e)', () => {
+// Pipeline HTTP complète (garde JWT, ValidationPipe, contrôleurs, services)
+// avec AuthService et PrismaService simulés.
+describe('Room-Service : serveurs et salons (e2e)', () => {
   let app: INestApplication;
   let baseUrl: string;
-  let authService: { authenticate: jest.Mock };
-  let prisma: {
-    $queryRaw: jest.Mock;
-    room: {
-      create: jest.Mock;
-      delete: jest.Mock;
-      findFirst: jest.Mock;
-      findMany: jest.Mock;
-      findUnique: jest.Mock;
-    };
-    roomMember: {
-      delete: jest.Mock;
-    };
+  let prisma: any;
+  const ancienJetonInterne = process.env.INTERNAL_SERVICE_TOKEN;
+
+  const date = new Date('2026-01-01T00:00:00.000Z');
+  const utilisateur = (id: string, role = 'utilisateur') => ({
+    id,
+    pseudo: id,
+    courriel: `${id}@example.test`,
+    role,
+    cree_le: date.toISOString(),
+    modifie_le: date.toISOString(),
+  });
+  const jetons: Record<string, ReturnType<typeof utilisateur>> = {
+    'Bearer bob-jwt': utilisateur('bob'),
+    'Bearer admin-jwt': utilisateur('root', 'admin'),
   };
 
-  const authenticatedUser = {
-    id: 'user-e2e',
-    pseudo: 'e2e',
-    courriel: 'e2e@example.test',
-    role: 'utilisateur' as const,
-    cree_le: '2026-01-01T00:00:00.000Z',
-    modifie_le: '2026-01-01T00:00:00.000Z',
+  const annonces = {
+    id: SALON_ANNONCES_ID,
+    serverId: SERVEUR_PAR_DEFAUT_ID,
+    name: 'annonces',
+    position: 0,
+    access: 'tous',
+    writePolicy: 'moderateurs',
+    createdBy: null,
+    createdAt: date,
+    updatedAt: date,
+  };
+  const chatvardage = {
+    id: SERVEUR_PAR_DEFAUT_ID,
+    name: 'Chatvardage',
+    icon: null,
+    ownerId: null,
+    isPublic: true,
+    isDefault: true,
+    createdAt: date,
+    updatedAt: date,
+    members: [
+      {
+        serverId: SERVEUR_PAR_DEFAUT_ID,
+        userId: 'bob',
+        role: 'membre',
+        joinedAt: date,
+      },
+    ],
+    invitations: [],
+    channels: [annonces],
   };
 
-  const moderatorUser = {
-    id: 'moderateur-e2e',
-    pseudo: 'moderateur-e2e',
-    courriel: 'moderateur-e2e@example.test',
-    role: 'moderateur' as const,
-    cree_le: '2026-01-01T00:00:00.000Z',
-    modifie_le: '2026-01-01T00:00:00.000Z',
-  };
-
-  const adminUser = {
-    id: 'admin-e2e',
-    pseudo: 'admin-e2e',
-    courriel: 'admin-e2e@example.test',
-    role: 'admin' as const,
-    cree_le: '2026-01-01T00:00:00.000Z',
-    modifie_le: '2026-01-01T00:00:00.000Z',
-  };
+  const requete = (
+    chemin: string,
+    options: {
+      methode?: string;
+      jeton?: string;
+      corps?: unknown;
+      entetes?: Record<string, string>;
+    } = {},
+  ) =>
+    fetch(`${baseUrl}${chemin}`, {
+      method: options.methode ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.jeton ? { Authorization: options.jeton } : {}),
+        ...options.entetes,
+      },
+      body:
+        options.corps === undefined ? undefined : JSON.stringify(options.corps),
+    });
 
   beforeEach(async () => {
-    authService = {
+    process.env.INTERNAL_SERVICE_TOKEN = 'jeton-interne-e2e';
+    const authService = {
       authenticate: jest.fn(async (authorization?: string) => {
-        if (authorization === 'Bearer valid-jwt') {
-          return authenticatedUser;
-        }
-        if (authorization === 'Bearer moderateur-jwt') {
-          return moderatorUser;
-        }
-        if (authorization === 'Bearer admin-jwt') {
-          return adminUser;
-        }
-        throw new UnauthorizedException('Authorization Bearer requis');
+        const user = authorization ? jetons[authorization] : undefined;
+        if (!user)
+          throw new UnauthorizedException('Authorization Bearer requis');
+        return user;
       }),
-    };
-
-    const publicRoom = {
-      id: 'public-e2e',
-      name: 'public-room',
-      visibility: 'public',
-      createdBy: 'public-creator',
-      createdAt: new Date('2026-01-01T00:00:00.000Z'),
-      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-      members: [
-        {
-          roomId: 'public-e2e',
-          userId: 'public-creator',
-          joinedAt: new Date('2026-01-01T00:00:00.000Z'),
-        },
-      ],
-      invitations: [],
-    };
-
-    const privateRoom = {
-      id: 'private-e2e',
-      name: 'secret',
-      visibility: 'prive',
-      createdBy: authenticatedUser.id,
-      createdAt: new Date('2026-01-01T00:00:00.000Z'),
-      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-      members: [
-        {
-          roomId: 'private-e2e',
-          userId: authenticatedUser.id,
-          joinedAt: new Date('2026-01-01T00:00:00.000Z'),
-        },
-      ],
-      invitations: [],
     };
 
     prisma = {
       $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
-      room: {
-        findMany: jest.fn().mockImplementation(({ where }: any = {}) => {
-          if (!where) {
-            return [publicRoom, privateRoom];
-          }
-
-          const canSeePrivate =
-            Array.isArray(where?.OR) &&
-            where.OR.some(
-              (condition: any) =>
-                condition?.members?.some?.userId === authenticatedUser.id,
-            );
-
-          return canSeePrivate ? [publicRoom, privateRoom] : [publicRoom];
-        }),
-        findFirst: jest.fn().mockImplementation(({ where }: any) => {
-          const isMemberLookup =
-            Array.isArray(where?.OR) &&
-            where.OR.some(
-              (condition: any) =>
-                condition?.members?.some?.userId === authenticatedUser.id,
-            );
-
-          if (where?.id !== 'private-e2e' || !isMemberLookup) {
-            return null;
-          }
-
-          return privateRoom;
-        }),
-        findUnique: jest.fn().mockImplementation(({ where }: any) => {
-          if (where?.id === 'private-e2e') {
-            return privateRoom;
-          }
-          if (where?.id === 'public-e2e') {
-            return publicRoom;
-          }
-          return null;
-        }),
-        create: jest.fn().mockResolvedValue({
-          id: 'room-e2e',
-          name: 'general',
-          visibility: 'public',
-          createdBy: moderatorUser.id,
-          createdAt: new Date('2026-01-01T00:00:00.000Z'),
-          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
+      server: {
+        findMany: jest.fn().mockResolvedValue([chatvardage]),
+        findUnique: jest.fn().mockResolvedValue(chatvardage),
+        create: jest.fn().mockImplementation(({ data }: any) => ({
+          ...chatvardage,
+          id: 'srv-nouveau',
+          name: data.name,
+          ownerId: data.ownerId,
+          isPublic: data.isPublic,
+          isDefault: false,
           members: [
             {
-              roomId: 'room-e2e',
-              userId: moderatorUser.id,
-              joinedAt: new Date('2026-01-01T00:00:00.000Z'),
+              serverId: 'srv-nouveau',
+              userId: data.ownerId,
+              role: 'membre',
+              joinedAt: date,
             },
           ],
-          invitations: [],
-        }),
-        delete: jest.fn().mockResolvedValue(privateRoom),
+          channels: [
+            {
+              ...annonces,
+              id: 'salon-general',
+              serverId: 'srv-nouveau',
+              name: 'général',
+              writePolicy: 'tous',
+            },
+          ],
+        })),
+        delete: jest.fn(),
       },
-      roomMember: {
-        delete: jest.fn().mockResolvedValue({}),
+      serverMember: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      room: {
+        findUnique: jest.fn().mockImplementation(({ where, include }: any) => {
+          if (where.id !== SALON_ANNONCES_ID) return null;
+          const filtre = include.server.include.members.where;
+          return {
+            ...annonces,
+            server: {
+              ...chatvardage,
+              members: filtre
+                ? chatvardage.members.filter((m) => m.userId === filtre.userId)
+                : chatvardage.members,
+            },
+          };
+        }),
       },
     };
 
@@ -188,193 +170,119 @@ describe('Rooms Service (e2e)', () => {
     baseUrl = await app.getUrl();
   });
 
-  afterEach(async () => app.close());
+  afterEach(async () => {
+    process.env.INTERNAL_SERVICE_TOKEN = ancienJetonInterne;
+    await app.close();
+  });
 
   it('GET /api/health', async () => {
-    const response = await fetch(`${baseUrl}/api/health`);
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual(
-      expect.objectContaining({
-        status: 'ok',
-        service: 'rooms-service',
-        database: 'ok',
-      }),
-    );
+    const reponse = await requete('/api/health');
+    expect(reponse.status).toBe(200);
   });
 
-  it('POST /api/rooms exige une identité authentifiée', async () => {
-    const response = await fetch(`${baseUrl}/api/rooms`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ nom: 'general', visibilite: 'public' }),
-    });
-    expect(response.status).toBe(401);
+  it('GET /api/servers exige un JWT', async () => {
+    expect((await requete('/api/servers')).status).toBe(401);
   });
 
-  it('POST /api/rooms refuse un utilisateur simple', async () => {
-    const response = await fetch(`${baseUrl}/api/rooms`, {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer valid-jwt',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ nom: 'general', visibilite: 'public' }),
-    });
-
-    expect(response.status).toBe(403);
-    expect(prisma.room.create).not.toHaveBeenCalled();
-  });
-
-  it('POST /api/rooms crée un salon pour un modérateur', async () => {
-    const response = await fetch(`${baseUrl}/api/rooms`, {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer moderateur-jwt',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ nom: 'general', visibilite: 'public' }),
-    });
-
-    expect(response.status).toBe(201);
-    await expect(response.json()).resolves.toEqual(
-      expect.objectContaining({
-        id: 'room-e2e',
-        nom: 'general',
-        creePar: moderatorUser.id,
-      }),
-    );
-    expect(authService.authenticate).toHaveBeenCalledWith(
-      'Bearer moderateur-jwt',
-    );
-    expect(prisma.room.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ createdBy: moderatorUser.id }),
-      }),
-    );
-  });
-
-  it('GET /api/rooms anonyme ne liste que les salons publics', async () => {
-    const response = await fetch(`${baseUrl}/api/rooms`);
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual([
-      expect.objectContaining({
-        id: 'public-e2e',
-        visibilite: 'public',
-      }),
-    ]);
-    expect(authService.authenticate).not.toHaveBeenCalled();
-  });
-
-  it('GET /api/rooms avec JWT inclut les salons privés dont l’utilisateur est membre', async () => {
-    const response = await fetch(`${baseUrl}/api/rooms`, {
-      headers: { authorization: 'Bearer valid-jwt' },
-    });
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'public-e2e',
-          visibilite: 'public',
-        }),
-        expect.objectContaining({
-          id: 'private-e2e',
-          visibilite: 'prive',
-        }),
-      ]),
-    );
-    expect(authService.authenticate).toHaveBeenCalledWith('Bearer valid-jwt');
-  });
-
-  it('GET /api/admin/rooms refuse un utilisateur non-admin', async () => {
-    const response = await fetch(`${baseUrl}/api/admin/rooms`, {
-      headers: { authorization: 'Bearer valid-jwt' },
-    });
-
-    expect(response.status).toBe(403);
-  });
-
-  it('GET /api/admin/rooms permet à un admin de voir tous les salons', async () => {
-    const response = await fetch(`${baseUrl}/api/admin/rooms`, {
-      headers: { authorization: 'Bearer admin-jwt' },
-    });
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'public-e2e', visibilite: 'public' }),
-        expect.objectContaining({ id: 'private-e2e', visibilite: 'prive' }),
-      ]),
-    );
-    expect(authService.authenticate).toHaveBeenCalledWith('Bearer admin-jwt');
-  });
-
-  it('DELETE /api/rooms/:id permet à un admin de supprimer un salon', async () => {
-    const response = await fetch(`${baseUrl}/api/rooms/private-e2e`, {
-      method: 'DELETE',
-      headers: { authorization: 'Bearer admin-jwt' },
-    });
-
-    expect(response.status).toBe(204);
-    expect(prisma.room.delete).toHaveBeenCalledWith({
-      where: { id: 'private-e2e' },
+  it('GET /api/servers ajoute au serveur par défaut et renvoie Chatvardage', async () => {
+    const reponse = await requete('/api/servers', { jeton: 'Bearer bob-jwt' });
+    expect(reponse.status).toBe(200);
+    const serveurs = await reponse.json();
+    expect(prisma.serverMember.createMany).toHaveBeenCalled();
+    expect(serveurs[0]).toMatchObject({
+      type: 'serveur',
+      nom: 'Chatvardage',
+      parDefaut: true,
+      monRole: 'membre',
+      salons: [{ nom: 'annonces', ecriture: 'moderateurs', peutEcrire: false }],
     });
   });
 
-  it('GET /api/rooms/:id masque un salon privé pour un client anonyme', async () => {
-    const response = await fetch(`${baseUrl}/api/rooms/private-e2e`);
-
-    expect(response.status).toBe(404);
-    expect(authService.authenticate).not.toHaveBeenCalled();
-  });
-
-  it('GET /api/rooms/:id permet à un membre authentifié de relire son salon privé', async () => {
-    const response = await fetch(`${baseUrl}/api/rooms/private-e2e`, {
-      headers: { authorization: 'Bearer valid-jwt' },
+  it('POST /api/servers : tout utilisateur crée un serveur dont il est propriétaire', async () => {
+    const reponse = await requete('/api/servers', {
+      methode: 'POST',
+      jeton: 'Bearer bob-jwt',
+      corps: { nom: '  Projet  ', public: true },
     });
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual(
-      expect.objectContaining({
-        id: 'private-e2e',
-        nom: 'secret',
-        visibilite: 'prive',
-      }),
-    );
-    expect(authService.authenticate).toHaveBeenCalledWith('Bearer valid-jwt');
+    expect(reponse.status).toBe(201);
+    await expect(reponse.json()).resolves.toMatchObject({
+      nom: 'Projet',
+      public: true,
+      monRole: 'proprietaire',
+      salons: [{ nom: 'général' }],
+    });
   });
 
-  it('DELETE /api/rooms/:id/members/:userId refuse un utilisateur simple', async () => {
-    const response = await fetch(
-      `${baseUrl}/api/rooms/private-e2e/members/${authenticatedUser.id}`,
+  it('POST /api/servers valide le corps', async () => {
+    const reponse = await requete('/api/servers', {
+      methode: 'POST',
+      jeton: 'Bearer bob-jwt',
+      corps: { nom: '   ', inconnu: 1 },
+    });
+    expect(reponse.status).toBe(400);
+  });
+
+  it('DELETE /api/servers/:id refuse le serveur par défaut, même pour un admin', async () => {
+    const reponse = await requete(`/api/servers/${SERVEUR_PAR_DEFAUT_ID}`, {
+      methode: 'DELETE',
+      jeton: 'Bearer admin-jwt',
+    });
+    expect(reponse.status).toBe(400);
+    expect(prisma.server.delete).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/servers/:id/leave refuse de quitter le serveur par défaut', async () => {
+    const reponse = await requete(
+      `/api/servers/${SERVEUR_PAR_DEFAUT_ID}/leave`,
       {
-        method: 'DELETE',
-        headers: { authorization: 'Bearer valid-jwt' },
+        methode: 'POST',
+        jeton: 'Bearer bob-jwt',
       },
     );
-
-    expect(response.status).toBe(403);
-    expect(prisma.roomMember.delete).not.toHaveBeenCalled();
+    expect(reponse.status).toBe(400);
   });
 
-  it('DELETE /api/rooms/:id/members/:userId permet à un modérateur de retirer un membre', async () => {
-    const response = await fetch(
-      `${baseUrl}/api/rooms/private-e2e/members/${authenticatedUser.id}`,
-      {
-        method: 'DELETE',
-        headers: { authorization: 'Bearer moderateur-jwt' },
-      },
-    );
+  describe('route interne /api/internal/channels/:id/access/:userId', () => {
+    const chemin = `/api/internal/channels/${SALON_ANNONCES_ID}/access/bob`;
 
-    expect(response.status).toBe(200);
-    expect(prisma.roomMember.delete).toHaveBeenCalledWith({
-      where: {
-        roomId_userId: {
-          roomId: 'private-e2e',
-          userId: authenticatedUser.id,
-        },
-      },
+    it('refuse sans jeton interne (le JWT ne suffit pas)', async () => {
+      expect((await requete(chemin, { jeton: 'Bearer bob-jwt' })).status).toBe(
+        401,
+      );
     });
+
+    it('#annonces : lecture seule pour un membre', async () => {
+      const reponse = await requete(chemin, {
+        entetes: { 'x-internal-token': 'jeton-interne-e2e' },
+      });
+      expect(reponse.status).toBe(200);
+      await expect(reponse.json()).resolves.toEqual({
+        salonId: SALON_ANNONCES_ID,
+        serveurId: SERVEUR_PAR_DEFAUT_ID,
+        estMembre: true,
+        peutLire: true,
+        peutEcrire: false,
+      });
+    });
+
+    it('#annonces : un admin global peut écrire', async () => {
+      const reponse = await requete(
+        `/api/internal/channels/${SALON_ANNONCES_ID}/access/root?role=admin`,
+        { entetes: { 'x-internal-token': 'jeton-interne-e2e' } },
+      );
+      await expect(reponse.json()).resolves.toMatchObject({ peutEcrire: true });
+    });
+
+    it('rôle inconnu : 400', async () => {
+      const reponse = await requete(`${chemin}?role=root`, {
+        entetes: { 'x-internal-token': 'jeton-interne-e2e' },
+      });
+      expect(reponse.status).toBe(400);
+    });
+  });
+
+  it('GET /api/rooms/:id (ancienne route sans JWT) n’existe plus', async () => {
+    // Exposait nom et membres de serveurs privés à n'importe qui.
+    expect((await requete(`/api/rooms/${SALON_ANNONCES_ID}`)).status).toBe(404);
   });
 });

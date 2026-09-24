@@ -11,8 +11,6 @@ const user = {
   pseudo: 'bob',
   courriel: 'bob@example.test',
   role: 'utilisateur' as const,
-  cree_le: '2026-01-01T00:00:00.000Z',
-  modifie_le: '2026-01-01T00:00:00.000Z',
 };
 const req = { user } as AuthenticatedRequest;
 

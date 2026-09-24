@@ -60,7 +60,7 @@ Pour chaque action protégée, il appelle `GET /api/auth/me` du service Auth. Au
 
 En intégration Docker locale, le service Auth peut être joint en HTTP sur un réseau de développement. `AUTH_SERVICE_URL` doit désigner uniquement l’origine du service Auth (par exemple `http://auth-service:3001`), sans chemin, paramètres de requête ni fragment. En production (`NODE_ENV=production`), cette URL doit obligatoirement utiliser `https://`; le Rooms Service refuse de démarrer avec une configuration Auth invalide ou non sécurisée.
 
-Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai configuré par `AUTH_TIMEOUT_MS` (3 000 ms par défaut), Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes. Une réponse Auth 2xx au format JSON invalide est traitée comme une erreur 502 (réponse incorrecte du service en amont), tandis qu’une indisponibilité réseau ou un 5xx Auth reste une erreur 503. Les journaux distinguent un dépassement du délai configuré d’une erreur réseau afin de faciliter le diagnostic.
+Le Rooms Service valide l’utilisateur auprès du service Auth pour chaque route protégée, avec un **cache court** : un jeton validé est mémorisé `AUTH_CACHE_TTL_MS` millisecondes (10 000 par défaut, `0` pour interroger Auth à chaque requête). Compromis assumé : une révocation (mot de passe changé, compte supprimé) ou un changement de rôle est pris en compte au plus tard à l’expiration de l’entrée. Les refus (401/403) et les pannes ne sont jamais mémorisés, et des requêtes simultanées avec le même jeton ne font qu’un appel. Si Auth est indisponible ou dépasse `AUTH_SERVICE_TIMEOUT_MS` (3 000 ms par défaut), Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes. Une réponse Auth 2xx au format JSON invalide est traitée comme une erreur 502 (réponse incorrecte du service en amont), tandis qu’une indisponibilité réseau ou un 5xx Auth reste une erreur 503. Les journaux distinguent un dépassement du délai configuré d’une erreur réseau afin de faciliter le diagnostic. Ce client est le fichier partagé `src/partage/client-auth.ts`, identique dans Message-Service.
 
 Sous Node.js 22, le `fetch` natif s’appuie sur le dispatcher global d’Undici, qui réutilise les connexions HTTP. Aucun pool HTTP supplémentaire n’est donc configuré dans le Room-Service.
 
@@ -160,7 +160,7 @@ docker compose -f compose.local.yml up --build
 
 Le Compose local crée une base `chatvardage_rooms` avec l'utilisateur `room_service`, exactement comme `.env.example`.
 
-Par défaut, ce compose force `NODE_ENV=development`, cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL`, `AUTH_TIMEOUT_MS` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire. Sous Linux, l'alias `host.docker.internal` repose sur `host-gateway`, disponible avec Docker Engine 20.10 ou plus récent.
+Par défaut, ce compose force `NODE_ENV=development`, cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL`, `AUTH_SERVICE_TIMEOUT_MS` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire. Sous Linux, l'alias `host.docker.internal` repose sur `host-gateway`, disponible avec Docker Engine 20.10 ou plus récent.
 
 ### Option Node.js + PostgreSQL local
 
@@ -219,7 +219,9 @@ NODE_ENV=development
 PORT=3003
 DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvardage_rooms?schema=public"
 AUTH_SERVICE_URL="http://localhost:3001"
-AUTH_TIMEOUT_MS=3000
+AUTH_SERVICE_TIMEOUT_MS=3000
+# 0 = appel à Auth à chaque requête (voir « Authentification »).
+AUTH_CACHE_TTL_MS=10000
 CORS_ORIGINS="http://localhost:5173"
 # Secret partagé avec Message-Service pour /api/internal (voir « Route interne »).
 INTERNAL_SERVICE_TOKEN="changez-moi-en-une-longue-valeur-aleatoire"
@@ -229,7 +231,7 @@ MESSAGE_SERVICE_URL="http://localhost:3004"
 
 ### En production (`NODE_ENV=production`)
 
-Le service **refuse de démarrer** si `INTERNAL_SERVICE_TOKEN` fait moins de 32 caractères (la valeur de développement `chatvardage_internal_dev` en fait 24), ou si le mot de passe de `DATABASE_URL` est une valeur de développement de l'Infra (`room_service_dev`…) — voir `src/common/secrets-production.ts`. `CORS_ORIGINS` doit aussi y être défini, sans origine locale. Le message d'erreur liste tous les problèmes d'un coup ; en développement, les valeurs par défaut de l'Infra restent acceptées. Générer de vraies valeurs, par ex. `openssl rand -hex 32`.
+Le service **refuse de démarrer** si `INTERNAL_SERVICE_TOKEN` fait moins de 32 caractères (la valeur de développement `chatvardage_internal_dev` en fait 24), ou si le mot de passe de `DATABASE_URL` est l'un des mots de passe de développement de l'Infra (`room_service_dev`, `postgres`…) — voir `src/partage/secrets-production.ts`. `CORS_ORIGINS` doit aussi y être défini, sans origine locale. Le message d'erreur liste tous les problèmes d'un coup ; en développement, les valeurs par défaut de l'Infra restent acceptées. Générer de vraies valeurs, par ex. `openssl rand -hex 32`.
 
 ## Temps réel
 

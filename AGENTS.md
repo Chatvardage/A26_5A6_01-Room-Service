@@ -156,6 +156,15 @@ Les tests E2E doivent refléter les routes actuelles du Room-Service et ne doive
 - Retourner des erreurs HTTP NestJS explicites (`BadRequestException`, `ForbiddenException`, `NotFoundException`, etc.).
 - Ne pas laisser de code généré, mort ou de dépendances inutilisées.
 
+## Fichiers partagés (`src/partage/`)
+
+`src/partage/` contient des fichiers **identiques à l'octet près** dans plusieurs dépôts :
+
+- `client-auth.ts` (+ spec) : validation du JWT auprès d'Authentification, avec cache — identique dans Message-Service ;
+- `secrets-production.ts` (+ spec) : refus de démarrer en production avec les secrets de développement — identique dans Message-Service et User-Config-Service.
+
+Ne pas les modifier dans un seul dépôt : reporter le même changement partout, puis lancer `A26_5A6_01-Infra/scripts/verifier-fichiers-partages.sh`. Ce qui est propre au service (par exemple les secrets exigés) se passe en paramètre depuis `main.ts` ou `auth/auth.service.ts`.
+
 ## Docker
 
 Pour tester ce dépôt seul :

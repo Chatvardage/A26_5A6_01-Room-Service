@@ -1,4 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
 import { EvenementsService } from './evenements.service';
 
 describe('EvenementsService', () => {
@@ -47,6 +48,18 @@ describe('EvenementsService', () => {
       raison: 'invitation',
       cibleId: 'c',
       utilisateurIds: ['a', 'b', 'c'],
+    });
+  });
+
+  it('serveur par défaut : « tous », sans liste ni requête en base', async () => {
+    await service.envoyer(SERVEUR_PAR_DEFAUT_ID, 'salons', {
+      destinataires: ['ignore'],
+    });
+    expect(prisma.serverMember.findMany).not.toHaveBeenCalled();
+    expect(corps()).toEqual({
+      serveurId: SERVEUR_PAR_DEFAUT_ID,
+      raison: 'salons',
+      tous: true,
     });
   });
 

@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Query,
   Req,
 } from '@nestjs/common';
 import {
@@ -17,6 +18,7 @@ import {
 import type { AuthenticatedRequest } from '../auth/auth.guard';
 import { requireUser } from '../auth/request-user';
 import { ChannelsService } from './channels.service';
+import { PageQueryDto } from './dto/member.dto';
 import { ServersService } from './servers.service';
 
 /**
@@ -62,9 +64,14 @@ export class CompatController {
   }
 
   @Get('admin/servers')
-  @ApiOperation({ summary: "Tous les serveurs (panneau d'administration)" })
+  @ApiOperation({
+    summary: "Tous les serveurs, par pages (panneau d'administration)",
+  })
   @ApiForbiddenResponse({ description: 'Réservé aux administrateurs' })
-  listerServeurs(@Req() request: AuthenticatedRequest) {
-    return this.servers.listerPourAdmin(requireUser(request));
+  listerServeurs(
+    @Query() query: PageQueryDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.servers.listerPourAdmin(requireUser(request), query);
   }
 }

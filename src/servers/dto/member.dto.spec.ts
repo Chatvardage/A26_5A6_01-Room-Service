@@ -1,6 +1,10 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { LIMITE_MEMBRES_MAX, ListMembersQueryDto } from './member.dto';
+import {
+  LIMITE_MEMBRES_MAX,
+  ListMembersQueryDto,
+  PageQueryDto,
+} from './member.dto';
 
 async function lire(query: Record<string, unknown>) {
   const dto = plainToInstance(ListMembersQueryDto, query);
@@ -45,5 +49,25 @@ describe('ListMembersQueryDto', () => {
 
   it('tout est facultatif', async () => {
     expect((await lire({})).erreurs).toEqual([]);
+  });
+});
+
+describe('PageQueryDto', () => {
+  it('convertit et borne decalage et limite', async () => {
+    const valide = plainToInstance(PageQueryDto, {
+      decalage: '10',
+      limite: '20',
+    });
+    expect(await validate(valide)).toEqual([]);
+    expect(valide).toMatchObject({ decalage: 10, limite: 20 });
+    for (const query of [
+      { decalage: '-1' },
+      { limite: '0' },
+      { limite: '101' },
+    ]) {
+      expect(await validate(plainToInstance(PageQueryDto, query))).not.toEqual(
+        [],
+      );
+    }
   });
 });

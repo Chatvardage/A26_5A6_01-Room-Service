@@ -49,6 +49,13 @@ export interface PageMembresResponse {
   suivant: number | null;
 }
 
+/** Une page de la liste admin des serveurs (GET /api/admin/servers). */
+export interface PageServeursResponse {
+  serveurs: ServeurResumeResponse[];
+  total: number;
+  suivant: number | null;
+}
+
 export interface ServeurResumeResponse {
   type: 'serveur';
   id: string;

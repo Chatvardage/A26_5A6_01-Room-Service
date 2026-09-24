@@ -24,6 +24,7 @@ import {
 import {
   InvitationResponse,
   PageMembresResponse,
+  PageServeursResponse,
   SalonResponse,
   ServeurResponse,
   ServeurResumeResponse,
@@ -80,18 +81,14 @@ export class ServersService {
    * session, donc dès l'inscription.
    */
   async listerMesServeurs(acteur: Acteur): Promise<ServeurResponse[]> {
-    // ON CONFLICT DO NOTHING : `count` vaut 1 seulement pour un NOUVEAU
-    // membre, les autres membres ne sont prévenus qu'à ce moment-là (pas à
-    // chaque connexion).
-    const { count } = await this.prisma.serverMember.createMany({
+    // ON CONFLICT DO NOTHING. Personne n'est prévenu : une arrivée dans le
+    // serveur par défaut ne change que son nombre de membres, et prévenir
+    // tout le monde à chaque inscription faisait recharger la page de tous
+    // les clients connectés.
+    await this.prisma.serverMember.createMany({
       data: [{ serverId: SERVEUR_PAR_DEFAUT_ID, userId: acteur.id }],
       skipDuplicates: true,
     });
-    if (count > 0) {
-      this.evenements.notifier(SERVEUR_PAR_DEFAUT_ID, 'membres', {
-        cibleId: acteur.id,
-      });
-    }
 
     const serveurs = await this.prisma.server.findMany({
       where: { members: { some: { userId: acteur.id } } },
@@ -215,13 +212,29 @@ export class ServersService {
     };
   }
 
-  async listerPourAdmin(acteur: Acteur): Promise<ServeurResumeResponse[]> {
+  /** Tous les serveurs, par pages (panneau d'administration). */
+  async listerPourAdmin(
+    acteur: Acteur,
+    options: { decalage?: number; limite?: number } = {},
+  ): Promise<PageServeursResponse> {
     this.exigerAdmin(acteur);
-    const serveurs = await this.prisma.server.findMany({
-      include: { _count: { select: { members: true } } },
-      orderBy: { createdAt: 'asc' },
-    });
-    return serveurs.map((serveur) => this.versResume(serveur));
+    const decalage = options.decalage ?? 0;
+    const limite = options.limite ?? LIMITE_MEMBRES_DEFAUT;
+    const [total, serveurs] = await Promise.all([
+      this.prisma.server.count(),
+      this.prisma.server.findMany({
+        include: { _count: { select: { members: true } } },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        skip: decalage,
+        take: limite,
+      }),
+    ]);
+    const fin = decalage + serveurs.length;
+    return {
+      serveurs: serveurs.map((serveur) => this.versResume(serveur)),
+      total,
+      suivant: fin < total ? fin : null,
+    };
   }
 
   // --- Création / modification ----------------------------------------------

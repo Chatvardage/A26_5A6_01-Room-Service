@@ -119,7 +119,7 @@ Toutes les routes sont préfixées par `/api` et exigent un JWT, sauf mention co
 
 | Méthode | Route | Qui | Description |
 |---|---|---|---|
-| GET | `/api/admin/servers` | admin | Tous les serveurs |
+| GET | `/api/admin/servers?decalage=&limite=` | admin | Tous les serveurs, par pages : `{ serveurs, total, suivant }` (50 par défaut, 100 au plus) |
 
 ### Route interne (Message-Service)
 
@@ -261,6 +261,13 @@ destinataires. Room-Service n'a ni Redis ni Socket.IO.
 | Expulser | `expulse` | membres d'avant, **expulsé compris** |
 | Inviter | `invitation` | membres + l'invité |
 | Créer / modifier / supprimer un salon | `salons` | membres |
+
+**Serveur par défaut « Chatvardage »** : tout le monde en est membre, donc
+l'événement est envoyé avec `tous: true` (sans liste de destinataires, qui
+dépasserait la taille maximale d'une requête) et Message-Service le diffuse à
+tous les clients connectés. Une simple arrivée dans ce serveur (première
+connexion d'un compte) n'envoie **aucun** événement : elle ne change que le
+nombre de membres, et faisait recharger la page de tout le monde.
 
 « Tire et oublie » (voir `EvenementsService`) : l'appel n'est jamais attendu
 et un échec est seulement journalisé ; une action ne peut pas échouer à

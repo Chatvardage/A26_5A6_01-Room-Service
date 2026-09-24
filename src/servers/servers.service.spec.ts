@@ -141,15 +141,15 @@ describe('ServersService', () => {
       ]);
     });
 
-    it('nouveau membre de Chatvardage : les autres membres sont prévenus', async () => {
+    it('nouveau membre de Chatvardage : personne n’est prévenu', async () => {
       prisma.serverMember.createMany.mockResolvedValue({ count: 1 });
       prisma.server.findMany.mockResolvedValue([parDefaut()]);
       await service.listerMesServeurs(u('neuf'));
-      expect(evenements.notifier).toHaveBeenCalledWith(
-        SERVEUR_PAR_DEFAUT_ID,
-        'membres',
-        { cibleId: 'neuf' },
-      );
+      expect(prisma.serverMember.createMany).toHaveBeenCalledWith({
+        data: [{ serverId: SERVEUR_PAR_DEFAUT_ID, userId: 'neuf' }],
+        skipDuplicates: true,
+      });
+      expect(evenements.notifier).not.toHaveBeenCalled();
     });
 
     it('un membre ne voit ni le salon des modérateurs ni les invitations', async () => {
@@ -250,11 +250,22 @@ describe('ServersService', () => {
       });
     });
 
-    it('listerPourAdmin : réservé aux administrateurs', async () => {
+    it('listerPourAdmin : par pages, réservé aux administrateurs', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(3);
       prisma.server.findMany.mockResolvedValue([
         { ...makeServeur(), _count: { members: 3 } },
       ]);
-      await expect(service.listerPourAdmin(admin)).resolves.toHaveLength(1);
+      await expect(service.listerPourAdmin(admin)).resolves.toMatchObject({
+        serveurs: [{ id: 'srv-1', nombreMembres: 3 }],
+        total: 3,
+        suivant: 1,
+      });
+      expect(prisma.server.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 50 }),
+      );
+      await expect(
+        service.listerPourAdmin(admin, { decalage: 2, limite: 10 }),
+      ).resolves.toMatchObject({ suivant: null });
       await expect(service.listerPourAdmin(u('bob'))).rejects.toThrow(
         ForbiddenException,
       );

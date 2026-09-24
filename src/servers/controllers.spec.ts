@@ -110,7 +110,7 @@ describe('contrôleurs', () => {
     expect(channels.supprimer).toHaveBeenCalledWith('salon', user);
     await c.listerSalons(req);
     expect(channels.listerCompatPourAdmin).toHaveBeenCalledWith(user);
-    await c.listerServeurs(req);
-    expect(servers.listerPourAdmin).toHaveBeenCalledWith(user);
+    await c.listerServeurs({ limite: 5 }, req);
+    expect(servers.listerPourAdmin).toHaveBeenCalledWith(user, { limite: 5 });
   });
 });

@@ -45,6 +45,27 @@ export class DiscoverServersQueryDto {
   q?: string;
 }
 
+/** Pagination de la liste admin des serveurs (même bornes que les membres). */
+export class PageQueryDto {
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsInt()
+  @Min(0)
+  decalage?: number;
+
+  @ApiPropertyOptional({
+    default: LIMITE_MEMBRES_DEFAUT,
+    maximum: LIMITE_MEMBRES_MAX,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(LIMITE_MEMBRES_MAX)
+  limite?: number;
+}
+
 export class ListMembersQueryDto {
   @ApiPropertyOptional({
     default: 0,

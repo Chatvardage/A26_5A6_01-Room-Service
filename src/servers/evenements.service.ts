@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
 
 /** Raisons acceptées par Message-Service (POST /api/internal/events). */
 export type RaisonEvenement =
@@ -51,18 +52,17 @@ export class EvenementsService {
     ).replace(/\/+$/, '');
 
     try {
-      const membres =
-        options.destinataires ??
-        (
-          await this.prisma.serverMember.findMany({
-            where: { serverId: serveurId },
-            select: { userId: true },
-          })
-        ).map((membre) => membre.userId);
-      const utilisateurIds = [
-        ...new Set([...membres, ...(options.extras ?? [])]),
-      ];
-      if (utilisateurIds.length === 0) return;
+      // Serveur par défaut : tout le monde en est membre. La liste de tous
+      // les comptes dépasserait vite la taille maximale d'une requête : on
+      // demande à Message-Service de prévenir tous les clients connectés.
+      let corps: { tous: true } | { utilisateurIds: string[] };
+      if (serveurId === SERVEUR_PAR_DEFAUT_ID) {
+        corps = { tous: true };
+      } else {
+        const utilisateurIds = await this.destinataires(serveurId, options);
+        if (utilisateurIds.length === 0) return;
+        corps = { utilisateurIds };
+      }
 
       const reponse = await fetch(`${baseUrl}/api/internal/events`, {
         method: 'POST',
@@ -74,7 +74,7 @@ export class EvenementsService {
           serveurId,
           raison,
           ...(options.cibleId ? { cibleId: options.cibleId } : {}),
-          utilisateurIds,
+          ...corps,
         }),
         signal: AbortSignal.timeout(DELAI_ENVOI_MS),
       });
@@ -89,5 +89,21 @@ export class EvenementsService {
         `Événement "${raison}" (serveur ${serveurId}) non transmis : ${message}`,
       );
     }
+  }
+
+  /** Destinataires : ceux fournis, ou les membres actuels, plus les extras. */
+  private async destinataires(
+    serveurId: string,
+    options: OptionsEvenement,
+  ): Promise<string[]> {
+    const membres =
+      options.destinataires ??
+      (
+        await this.prisma.serverMember.findMany({
+          where: { serverId: serveurId },
+          select: { userId: true },
+        })
+      ).map((membre) => membre.userId);
+    return [...new Set([...membres, ...(options.extras ?? [])])];
   }
 }

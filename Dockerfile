@@ -22,4 +22,7 @@ COPY --from=build /app/prisma ./prisma
 # Utilisateur non root fourni par l'image node.
 USER node
 EXPOSE 3003
+# Utilisé hors Compose (le Compose d'Infra définit le même contrôle).
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://localhost:3003/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/main"]

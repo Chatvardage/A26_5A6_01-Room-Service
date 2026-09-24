@@ -106,6 +106,7 @@ export class ChannelsService {
     }
     await this.prisma.room.delete({ where: { id: salonId } });
     this.evenements.notifier(salon.serverId, 'salons');
+    this.evenements.salonsSupprimes([salonId]);
   }
 
   /**
@@ -129,6 +130,8 @@ export class ChannelsService {
       estMembre: membre !== undefined || salon.server.isDefault,
       peutLire: peutVoirSalon(role, salon),
       peutEcrire: peutEcrireSalon(role, salon),
+      // Supprimer les messages des autres dans ce salon.
+      peutModerer: peutModerer(role),
     };
   }
 

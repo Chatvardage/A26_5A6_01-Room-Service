@@ -125,7 +125,8 @@ Toutes les routes sont préfixées par `/api` et exigent un JWT, sauf mention co
 
 | Méthode | Route | Protection | Description |
 |---|---|---|---|
-| GET | `/api/internal/channels/:id/access/:userId?role=` | en-tête `x-internal-token` = `INTERNAL_SERVICE_TOKEN` | `{ salonId, serveurId, estMembre, peutLire, peutEcrire }` |
+| GET | `/api/internal/channels/:id/access/:userId?role=` | en-tête `x-internal-token` = `INTERNAL_SERVICE_TOKEN` | `{ salonId, serveurId, estMembre, peutLire, peutEcrire, peutModerer }` (`peutModerer` : modérateur du serveur, propriétaire ou admin, qui peut supprimer les messages des autres) |
+| DELETE | `/api/internal/users/:userId` | idem (appelée par Authentification) | Compte supprimé : ses serveurs (et leurs salons) sont supprimés, il quitte les autres, ses invitations reçues disparaissent. Idempotent. Réponse `{ serveursSupprimes, serveursQuittes, invitationsSupprimees }` |
 
 `role` est le rôle global (`admin` \| `moderateur` \| `utilisateur`, défaut `utilisateur`) issu du JWT que Message-Service a déjà validé. Sans `INTERNAL_SERVICE_TOKEN` configuré, la route répond toujours 503 (échec fermé). **Serveur-API ne relaie pas `/api/internal`** : seuls les autres microservices, sur le réseau Docker interne, peuvent l'appeler. Le port du Room-Service ne doit pas être exposé publiquement.
 
@@ -247,6 +248,12 @@ Après chaque changement, le service prévient Message-Service
 (`POST {MESSAGE_SERVICE_URL}/api/internal/events`, même `INTERNAL_SERVICE_TOKEN`),
 qui relaie `serveur.change` `{ serveurId, raison, cibleId }` aux sockets des
 destinataires. Room-Service n'a ni Redis ni Socket.IO.
+
+Un salon supprimé (seul, avec son serveur, ou avec le compte de son
+propriétaire) : Message-Service efface aussi ses messages
+(`POST {MESSAGE_SERVICE_URL}/api/internal/salons-supprimes` `{ salonIds }`,
+par lots de 500). Comme les événements, un échec est journalisé sans
+bloquer la suppression.
 
 | Action | `raison` | Destinataires |
 |---|---|---|

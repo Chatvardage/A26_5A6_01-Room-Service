@@ -60,7 +60,7 @@ const u = (id: string) => ({ id, role: 'utilisateur' as const });
 describe('ChannelsService', () => {
   let service: ChannelsService;
   let prisma: any;
-  let evenements: { notifier: jest.Mock };
+  let evenements: { notifier: jest.Mock; salonsSupprimes: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -74,7 +74,7 @@ describe('ChannelsService', () => {
         findMany: jest.fn(),
       },
     };
-    evenements = { notifier: jest.fn() };
+    evenements = { notifier: jest.fn(), salonsSupprimes: jest.fn() };
     service = new ChannelsService(
       prisma as PrismaService,
       new ServersService(prisma as PrismaService, evenements as any),
@@ -227,6 +227,8 @@ describe('ChannelsService', () => {
         where: { id: 'salon-1' },
       });
       expect(evenements.notifier).toHaveBeenCalledWith('srv-1', 'salons');
+      // Ses messages, dans Message-Service.
+      expect(evenements.salonsSupprimes).toHaveBeenCalledWith(['salon-1']);
     });
   });
 
@@ -248,6 +250,7 @@ describe('ChannelsService', () => {
         estMembre: true,
         peutLire: true,
         peutEcrire: true,
+        peutModerer: false,
       });
       expect(prisma.room.findUnique).toHaveBeenCalledWith({
         where: { id: 'salon-1' },
@@ -278,6 +281,22 @@ describe('ChannelsService', () => {
       });
     });
 
+    it('modérateur, propriétaire ou admin : peut modérer les messages', async () => {
+      prisma.room.findUnique.mockResolvedValue(
+        salonAvec(membre('modo', 'moderateur')),
+      );
+      await expect(
+        service.acces('salon-1', 'modo', 'utilisateur'),
+      ).resolves.toMatchObject({ peutModerer: true });
+      prisma.room.findUnique.mockResolvedValue(salonAvec(null));
+      await expect(
+        service.acces('salon-1', 'owner', 'utilisateur'),
+      ).resolves.toMatchObject({ peutModerer: true });
+      await expect(
+        service.acces('salon-1', 'root', 'admin'),
+      ).resolves.toMatchObject({ peutModerer: true });
+    });
+
     it('non-membre d’un serveur privé : aucun accès', async () => {
       prisma.room.findUnique.mockResolvedValue(salonAvec(null));
       await expect(
@@ -286,6 +305,7 @@ describe('ChannelsService', () => {
         estMembre: false,
         peutLire: false,
         peutEcrire: false,
+        peutModerer: false,
       });
     });
   });

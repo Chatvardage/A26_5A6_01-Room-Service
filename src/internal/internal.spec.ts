@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { ChannelsService } from '../servers/channels.service';
+import type { ServersService } from '../servers/servers.service';
 import { InternalController } from './internal.controller';
 import { InternalTokenGuard } from './internal-token.guard';
 
@@ -54,10 +55,25 @@ describe('route interne', () => {
 
   it('InternalController transmet le rôle global (utilisateur par défaut)', async () => {
     const channels = { acces: jest.fn().mockResolvedValue('ok') };
-    const c = new InternalController(channels as unknown as ChannelsService);
+    const c = new InternalController(
+      channels as unknown as ChannelsService,
+      {} as ServersService,
+    );
     await c.acces('salon', 'bob', {});
     expect(channels.acces).toHaveBeenCalledWith('salon', 'bob', 'utilisateur');
     await c.acces('salon', 'root', { role: 'admin' });
     expect(channels.acces).toHaveBeenCalledWith('salon', 'root', 'admin');
+  });
+
+  it('InternalController délègue la suppression d’un compte', async () => {
+    const servers = {
+      supprimerUtilisateur: jest.fn().mockResolvedValue({ ok: 1 }),
+    };
+    const c = new InternalController(
+      {} as ChannelsService,
+      servers as unknown as ServersService,
+    );
+    await expect(c.supprimerUtilisateur('parti')).resolves.toEqual({ ok: 1 });
+    expect(servers.supprimerUtilisateur).toHaveBeenCalledWith('parti');
   });
 });

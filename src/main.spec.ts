@@ -4,6 +4,7 @@ const app = {
   setGlobalPrefix: jest.fn(),
   enableCors: jest.fn(),
   useGlobalPipes: jest.fn(),
+  enableShutdownHooks: jest.fn(),
   listen,
 };
 
@@ -72,6 +73,7 @@ describe('bootstrap', () => {
       credentials: false,
     });
     expect(app.useGlobalPipes).toHaveBeenCalled();
+    expect(app.enableShutdownHooks).toHaveBeenCalled();
 
     expect(builder.setTitle).toHaveBeenCalledWith('Chatvardage Rooms Service');
     expect(builder.setDescription).toHaveBeenCalled();

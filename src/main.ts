@@ -78,6 +78,8 @@ async function bootstrap() {
     urlsAvecMotDePasse: ['DATABASE_URL'],
   });
   const app = await NestFactory.create(AppModule);
+  // SIGTERM (docker stop) : fermeture propre (connexions Prisma).
+  app.enableShutdownHooks();
 
   app.setGlobalPrefix('api');
   const origins = resolveCorsOrigins();

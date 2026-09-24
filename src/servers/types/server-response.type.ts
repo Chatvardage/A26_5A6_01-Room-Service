@@ -78,4 +78,7 @@ export interface AccesSalonResponse {
   estMembre: boolean;
   peutLire: boolean;
   peutEcrire: boolean;
+  /** Modérateur du serveur (ou propriétaire, admin) : peut supprimer les
+   * messages des autres dans ce salon. */
+  peutModerer: boolean;
 }

@@ -303,6 +303,7 @@ describe('Room-Service : serveurs et salons (e2e)', () => {
         estMembre: true,
         peutLire: true,
         peutEcrire: false,
+        peutModerer: false,
       });
     });
 

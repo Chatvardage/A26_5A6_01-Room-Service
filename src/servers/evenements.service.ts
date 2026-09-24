@@ -16,6 +16,9 @@ export type OptionsEvenement = {
 };
 
 const DELAI_ENVOI_MS = 2000;
+// Salons dont Message-Service efface les messages en un seul appel (borne
+// de sa route interne).
+export const TAILLE_LOT_SALONS = 500;
 
 /**
  * Prévient les clients concernés, en temps réel, qu'un serveur a changé.
@@ -40,17 +43,36 @@ export class EvenementsService {
     void this.envoyer(serveurId, raison, options);
   }
 
+  /**
+   * Salons supprimés (seuls ou avec leur serveur) : Message-Service efface
+   * leurs messages, qui ne seraient sinon plus jamais lus. Même principe
+   * « tire et oublie » que `notifier` : un échec est journalisé.
+   */
+  salonsSupprimes(salonIds: string[]): void {
+    void this.purgerSalons(salonIds);
+  }
+
+  async purgerSalons(salonIds: string[]): Promise<void> {
+    for (let i = 0; i < salonIds.length; i += TAILLE_LOT_SALONS) {
+      const lot = salonIds.slice(i, i + TAILLE_LOT_SALONS);
+      try {
+        await this.appeler('/api/internal/salons-supprimes', { salonIds: lot });
+      } catch (erreur) {
+        this.logger.warn(
+          `Messages de ${lot.length} salon(s) supprimé(s) non effacés : ${messageErreur(erreur)}`,
+        );
+      }
+    }
+  }
+
   async envoyer(
     serveurId: string,
     raison: RaisonEvenement,
     options: OptionsEvenement,
   ): Promise<void> {
-    const jeton = process.env.INTERNAL_SERVICE_TOKEN?.trim();
-    if (!jeton) return; // Temps réel désactivé sans secret partagé.
-    const baseUrl = (
-      process.env.MESSAGE_SERVICE_URL ?? 'http://localhost:3004'
-    ).replace(/\/+$/, '');
-
+    // Temps réel désactivé sans secret partagé : pas même la lecture des
+    // destinataires.
+    if (!process.env.INTERNAL_SERVICE_TOKEN?.trim()) return;
     try {
       // Serveur par défaut : tout le monde en est membre. La liste de tous
       // les comptes dépasserait vite la taille maximale d'une requête : on
@@ -64,30 +86,41 @@ export class EvenementsService {
         corps = { utilisateurIds };
       }
 
-      const reponse = await fetch(`${baseUrl}/api/internal/events`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-internal-token': jeton,
-        },
-        body: JSON.stringify({
-          serveurId,
-          raison,
-          ...(options.cibleId ? { cibleId: options.cibleId } : {}),
-          ...corps,
-        }),
-        signal: AbortSignal.timeout(DELAI_ENVOI_MS),
+      await this.appeler('/api/internal/events', {
+        serveurId,
+        raison,
+        ...(options.cibleId ? { cibleId: options.cibleId } : {}),
+        ...corps,
       });
-      if (!reponse.ok) {
-        this.logger.warn(
-          `Événement "${raison}" (serveur ${serveurId}) refusé par Message-Service : HTTP ${reponse.status}`,
-        );
-      }
     } catch (erreur) {
-      const message = erreur instanceof Error ? erreur.message : String(erreur);
       this.logger.warn(
-        `Événement "${raison}" (serveur ${serveurId}) non transmis : ${message}`,
+        `Événement "${raison}" (serveur ${serveurId}) non transmis : ${messageErreur(erreur)}`,
       );
+    }
+  }
+
+  /**
+   * POST vers une route interne de Message-Service. Ne fait rien sans
+   * INTERNAL_SERVICE_TOKEN (temps réel et purge désactivés) ; lève sur une
+   * erreur réseau ou une réponse HTTP en erreur.
+   */
+  private async appeler(chemin: string, corps: unknown): Promise<void> {
+    const jeton = process.env.INTERNAL_SERVICE_TOKEN?.trim();
+    if (!jeton) return;
+    const baseUrl = (
+      process.env.MESSAGE_SERVICE_URL ?? 'http://localhost:3004'
+    ).replace(/\/+$/, '');
+    const reponse = await fetch(`${baseUrl}${chemin}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-token': jeton,
+      },
+      body: JSON.stringify(corps),
+      signal: AbortSignal.timeout(DELAI_ENVOI_MS),
+    });
+    if (!reponse.ok) {
+      throw new Error(`refusé par Message-Service : HTTP ${reponse.status}`);
     }
   }
 
@@ -106,4 +139,8 @@ export class EvenementsService {
       ).map((membre) => membre.userId);
     return [...new Set([...membres, ...(options.extras ?? [])])];
   }
+}
+
+function messageErreur(erreur: unknown): string {
+  return erreur instanceof Error ? erreur.message : String(erreur);
 }

@@ -1,4 +1,11 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiHeader,
   ApiOperation,
@@ -8,6 +15,7 @@ import {
 import { IsIn, IsOptional } from 'class-validator';
 import { PublicRoute } from '../auth/auth.guard';
 import { ChannelsService } from '../servers/channels.service';
+import { ServersService } from '../servers/servers.service';
 import {
   EN_TETE_JETON_INTERNE,
   InternalTokenGuard,
@@ -33,7 +41,10 @@ export class AccesQueryDto {
 @PublicRoute()
 @UseGuards(InternalTokenGuard)
 export class InternalController {
-  constructor(private readonly channels: ChannelsService) {}
+  constructor(
+    private readonly channels: ChannelsService,
+    private readonly servers: ServersService,
+  ) {}
 
   @Get('channels/:id/access/:userId')
   @ApiOperation({
@@ -45,5 +56,14 @@ export class InternalController {
     @Query() query: AccesQueryDto,
   ) {
     return this.channels.acces(id, userId, query.role ?? 'utilisateur');
+  }
+
+  @Delete('users/:userId')
+  @ApiOperation({
+    summary:
+      'Compte supprimé (pour Authentification) : ses serveurs, adhésions et invitations',
+  })
+  supprimerUtilisateur(@Param('userId') userId: string) {
+    return this.servers.supprimerUtilisateur(userId);
   }
 }

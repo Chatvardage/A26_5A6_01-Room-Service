@@ -1,6 +1,6 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
-import { EvenementsService } from './evenements.service';
+import { EvenementsService, TAILLE_LOT_SALONS } from './evenements.service';
 
 describe('EvenementsService', () => {
   const originalFetch = global.fetch;
@@ -106,6 +106,40 @@ describe('EvenementsService', () => {
   ])("n'échoue jamais sur %s", async (_cas, preparer) => {
     preparer();
     await expect(service.envoyer('s1', 'salons', {})).resolves.toBeUndefined();
+  });
+
+  it('purge des salons supprimés : par lots, avec le jeton interne', async () => {
+    const ids = Array.from(
+      { length: TAILLE_LOT_SALONS + 1 },
+      (_, i) => `r${i}`,
+    );
+    await service.purgerSalons(ids);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:3004/api/internal/salons-supprimes');
+    expect(options.headers['x-internal-token']).toBe('secret');
+    expect(corps().salonIds).toHaveLength(TAILLE_LOT_SALONS);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      salonIds: [`r${TAILLE_LOT_SALONS}`],
+    });
+  });
+
+  it("purge : n'échoue jamais, et continue avec le lot suivant", async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    const ids = Array.from(
+      { length: TAILLE_LOT_SALONS + 1 },
+      (_, i) => `r${i}`,
+    );
+    await expect(service.purgerSalons(ids)).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('salonsSupprimes ne bloque pas et ne renvoie rien', () => {
+    const purger = jest.spyOn(service, 'purgerSalons').mockResolvedValue();
+    expect(service.salonsSupprimes(['r1'])).toBeUndefined();
+    expect(purger).toHaveBeenCalledWith(['r1']);
   });
 
   it('notifier ne bloque pas et ne renvoie rien', () => {

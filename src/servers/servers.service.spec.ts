@@ -83,7 +83,7 @@ const admin = { id: 'root', role: 'admin' as const };
 describe('ServersService', () => {
   let service: ServersService;
   let prisma: any;
-  let evenements: { notifier: jest.Mock };
+  let evenements: { notifier: jest.Mock; salonsSupprimes: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -93,6 +93,7 @@ describe('ServersService', () => {
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
+        deleteMany: jest.fn(),
       },
       serverMember: {
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -102,6 +103,7 @@ describe('ServersService', () => {
         upsert: jest.fn(),
         create: jest.fn(),
         delete: jest.fn(),
+        deleteMany: jest.fn(),
         update: jest.fn(),
       },
       serverInvitation: {
@@ -113,7 +115,7 @@ describe('ServersService', () => {
       },
       $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
     };
-    evenements = { notifier: jest.fn() };
+    evenements = { notifier: jest.fn(), salonsSupprimes: jest.fn() };
     service = new ServersService(prisma as PrismaService, evenements as any);
   });
 
@@ -371,6 +373,77 @@ describe('ServersService', () => {
       await expect(
         service.supprimer(SERVEUR_PAR_DEFAUT_ID, admin),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('serveur par défaut : jamais la liste de tous les membres', () => {
+    it("ne charge que les lignes de l'appelant et de la cible", async () => {
+      prisma.server.findUnique.mockResolvedValue(parDefaut());
+      await service
+        .changerRole(SERVEUR_PAR_DEFAUT_ID, 'bob', 'moderateur', admin)
+        .catch(() => undefined);
+      expect(prisma.server.findUnique.mock.calls[0][0].include.members).toEqual(
+        {
+          where: { userId: { in: ['root', 'bob'] } },
+          orderBy: { joinedAt: 'asc' },
+        },
+      );
+    });
+
+    it('un autre serveur est chargé avec tous ses membres', async () => {
+      prisma.server.findUnique.mockResolvedValue(makeServeur());
+      await service.rejoindre('srv-1', u('bob'));
+      expect(prisma.server.findUnique.mock.calls[0][0].include.members).toEqual(
+        { orderBy: { joinedAt: 'asc' } },
+      );
+    });
+  });
+
+  describe('compte supprimé (route interne)', () => {
+    beforeEach(() => {
+      prisma.server.findMany.mockResolvedValue([
+        {
+          id: 'possede',
+          members: [{ userId: 'parti' }, { userId: 'bob' }],
+          channels: [{ id: 'r1' }, { id: 'r2' }],
+        },
+      ]);
+      prisma.serverMember.findMany.mockResolvedValue([
+        { serverId: 'possede' },
+        { serverId: 'srv-1' },
+        { serverId: SERVEUR_PAR_DEFAUT_ID },
+      ]);
+      prisma.serverInvitation.findMany.mockResolvedValue([
+        { serverId: 'srv-2' },
+      ]);
+    });
+
+    it('supprime ses serveurs, ses adhésions et ses invitations', async () => {
+      await expect(service.supprimerUtilisateur('parti')).resolves.toEqual({
+        serveursSupprimes: 1,
+        serveursQuittes: 2,
+        invitationsSupprimees: 1,
+      });
+      expect(prisma.server.deleteMany).toHaveBeenCalledWith({
+        where: { ownerId: 'parti' },
+      });
+      expect(prisma.serverMember.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'parti' },
+      });
+      expect(prisma.serverInvitation.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'parti' },
+      });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('prévient les membres, sauf pour le serveur par défaut, et purge les messages', async () => {
+      await service.supprimerUtilisateur('parti');
+      expect(evenements.notifier.mock.calls).toEqual([
+        ['possede', 'supprime', { destinataires: ['parti', 'bob'] }],
+        ['srv-1', 'membres', { cibleId: 'parti' }],
+        ['srv-2', 'membres', { cibleId: 'parti' }],
+      ]);
+      expect(evenements.salonsSupprimes).toHaveBeenCalledWith(['r1', 'r2']);
     });
   });
 
@@ -820,6 +893,11 @@ describe('ServersService', () => {
       expect(evenements.notifier).toHaveBeenCalledWith('srv-1', 'supprime', {
         destinataires: membresAvant,
       });
+      // Messages de tous ses salons, dans Message-Service.
+      expect(evenements.salonsSupprimes).toHaveBeenCalledWith([
+        'salon-1',
+        'salon-modos',
+      ]);
     });
 
     it('expulser : l’expulsé est prévenu avec les autres', async () => {

@@ -2,7 +2,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../auth/auth.guard';
 import { ChannelsController } from './channels.controller';
 import { ChannelsService } from './channels.service';
-import { CompatController } from './compat.controller';
+import { AdminController } from './admin.controller';
 import { ServersController } from './servers.controller';
 import { ServersService } from './servers.service';
 
@@ -45,12 +45,7 @@ describe('contrôleurs', () => {
       'listerPourAdmin',
       'exigerAdmin',
     ]);
-    channels = simuler([
-      'creer',
-      'modifier',
-      'supprimer',
-      'listerCompatPourAdmin',
-    ]);
+    channels = simuler(['creer', 'modifier', 'supprimer']);
   });
 
   it('ServersController délègue au service avec l’utilisateur authentifié', async () => {
@@ -103,13 +98,8 @@ describe('contrôleurs', () => {
     expect(channels.supprimer).toHaveBeenCalledWith('salon', user);
   });
 
-  it('CompatController : anciennes routes de transition', async () => {
-    const c = new CompatController(service(), salons());
-    await expect(c.supprimerSalon('salon', req)).resolves.toBeUndefined();
-    expect(servers.exigerAdmin).toHaveBeenCalledWith(user);
-    expect(channels.supprimer).toHaveBeenCalledWith('salon', user);
-    await c.listerSalons(req);
-    expect(channels.listerCompatPourAdmin).toHaveBeenCalledWith(user);
+  it('AdminController : liste des serveurs par pages', async () => {
+    const c = new AdminController(service());
     await c.listerServeurs({ limite: 5 }, req);
     expect(servers.listerPourAdmin).toHaveBeenCalledWith(user, { limite: 5 });
   });

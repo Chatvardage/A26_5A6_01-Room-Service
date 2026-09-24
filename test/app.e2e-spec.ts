@@ -322,6 +322,19 @@ describe('Room-Service : serveurs et salons (e2e)', () => {
     });
   });
 
+  it('les anciennes routes de transition n’existent plus', async () => {
+    for (const [methode, chemin] of [
+      ['GET', '/api/admin/rooms'],
+      ['DELETE', `/api/rooms/${SALON_ANNONCES_ID}`],
+    ]) {
+      const reponse = await requete(chemin, {
+        methode,
+        jeton: 'Bearer admin-jwt',
+      });
+      expect(reponse.status).toBe(404);
+    }
+  });
+
   it('GET /api/rooms/:id (ancienne route sans JWT) n’existe plus', async () => {
     // Exposait nom et membres de serveurs privés à n'importe qui.
     expect((await requete(`/api/rooms/${SALON_ANNONCES_ID}`)).status).toBe(404);

@@ -3,7 +3,7 @@ import { InternalController } from '../internal/internal.controller';
 import { InternalTokenGuard } from '../internal/internal-token.guard';
 import { ChannelsController } from './channels.controller';
 import { ChannelsService } from './channels.service';
-import { CompatController } from './compat.controller';
+import { AdminController } from './admin.controller';
 import { EvenementsService } from './evenements.service';
 import { ServersController } from './servers.controller';
 import { ServersService } from './servers.service';
@@ -12,7 +12,7 @@ import { ServersService } from './servers.service';
   controllers: [
     ServersController,
     ChannelsController,
-    CompatController,
+    AdminController,
     InternalController,
   ],
   providers: [

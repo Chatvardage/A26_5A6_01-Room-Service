@@ -69,7 +69,7 @@ Les identifiants du serveur par défaut et de ses salons (`src/servers/default-s
 
 Les changements de serveur sont signalés à Message-Service par `EvenementsService` (appel HTTP interne « tire et oublie ») : toute nouvelle action qui modifie un serveur, ses membres, ses invitations ou ses salons doit appeler `evenements.notifier(...)` avec les bons destinataires (voir le tableau « Temps réel » du README). Ne pas ajouter Redis ni Socket.IO ici pour autant.
 
-Les routes de transition (`CompatController` : `DELETE /api/rooms/:id`, `GET /api/admin/rooms`) existent uniquement pour le Dashboard ; les retirer une fois celui-ci migré. Ne pas réintroduire de route lisible sans JWT : l'ancien `GET /api/rooms/:id` (authentification optionnelle) exposait le nom et les membres de serveurs privés. Les `userId` restent des chaînes. Ne pas ajouter de table `User` ou de clé étrangère vers un utilisateur : les utilisateurs appartiennent au service d'authentification.
+Les anciennes routes « salons autonomes » (`/api/rooms/*`, `GET /api/admin/rooms`) ont été retirées : ne pas les réintroduire, le Dashboard passe par `AdminController` (`GET /api/admin/servers`) et les routes des serveurs. Ne pas réintroduire de route lisible sans JWT : l'ancien `GET /api/rooms/:id` (authentification optionnelle) exposait le nom et les membres de serveurs privés. Les `userId` restent des chaînes. Ne pas ajouter de table `User` ou de clé étrangère vers un utilisateur : les utilisateurs appartiennent au service d'authentification.
 
 ## Base de données et Prisma
 

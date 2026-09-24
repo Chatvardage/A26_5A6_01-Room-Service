@@ -289,40 +289,4 @@ describe('ChannelsService', () => {
       });
     });
   });
-
-  describe('compatibilité', () => {
-    const avecTousLesMembres = (overrides: Record<string, unknown> = {}) =>
-      salon({ ...overrides, server: serveur() });
-
-    it('listerCompatPourAdmin : membreIds = membres qui peuvent lire le salon', async () => {
-      prisma.room.findMany.mockResolvedValue([
-        avecTousLesMembres({ access: 'moderateurs' }),
-      ]);
-      const [salonCompat] = await service.listerCompatPourAdmin({
-        id: 'root',
-        role: 'admin',
-      });
-      expect(salonCompat).toEqual({
-        type: 'salon',
-        id: 'salon-1',
-        nom: 'général',
-        visibilite: 'public',
-        creePar: 'owner',
-        membreIds: ['owner', 'modo'],
-        membresInvites: [],
-        serveurId: 'srv-1',
-        serveurNom: 'Projet',
-      });
-    });
-
-    it('listerCompatPourAdmin : réservé aux administrateurs', async () => {
-      prisma.room.findMany.mockResolvedValue([avecTousLesMembres()]);
-      await expect(
-        service.listerCompatPourAdmin({ id: 'root', role: 'admin' }),
-      ).resolves.toHaveLength(1);
-      await expect(service.listerCompatPourAdmin(u('bob'))).rejects.toThrow(
-        ForbiddenException,
-      );
-    });
-  });
 });

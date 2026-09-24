@@ -129,14 +129,9 @@ Toutes les routes sont préfixées par `/api` et exigent un JWT, sauf mention co
 
 `role` est le rôle global (`admin` \| `moderateur` \| `utilisateur`, défaut `utilisateur`) issu du JWT que Message-Service a déjà validé. Sans `INTERNAL_SERVICE_TOKEN` configuré, la route répond toujours 503 (échec fermé). **Serveur-API ne relaie pas `/api/internal`** : seuls les autres microservices, sur le réseau Docker interne, peuvent l'appeler. Le port du Room-Service ne doit pas être exposé publiquement.
 
-### Transition (à retirer)
+### Anciennes routes (retirées)
 
-Routes de l'ancien contrat « salons autonomes », conservées le temps que Message-Service passe à la route interne et que le Dashboard passe aux serveurs :
-
-| Méthode | Route | Utilisée par | Description |
-|---|---|---|---|
-| GET | `/api/admin/rooms` | Dashboard | Tous les salons, ancien format (+ `serveurId`, `serveurNom`) ; admin |
-| DELETE | `/api/rooms/:id` | Dashboard | Supprimer un salon ; admin |
+Les routes de l'ancien contrat « salons autonomes » (`GET /api/rooms/:id`, `GET /api/admin/rooms`, `DELETE /api/rooms/:id`) n'existent plus. Le Dashboard doit utiliser `GET /api/admin/servers` (par pages), puis `GET /api/servers/:id` et `GET /api/servers/:id/members`, et `DELETE /api/channels/:id` (un admin a tous les droits).
 
 ### Santé
 
@@ -363,12 +358,7 @@ Réponse attendue :
 
 Les messages des salons sont stockés et diffusés par Message-Service, qui vérifie auprès de ce service, via la route interne, qu'un utilisateur peut lire ou écrire dans un salon (écriture réservée de `#annonces`, salons réservés aux modérateurs).
 
-**Ordre de déploiement du passage aux serveurs :**
-1. ce service, avec `INTERNAL_SERVICE_TOKEN` : les routes de transition gardent l'ancien Message-Service et le Dashboard fonctionnels ;
-2. Serveur-API : relayer `/api/servers` et `/api/channels` ;
-3. Message-Service : passer à la route interne (même `INTERNAL_SERVICE_TOKEN`) et insérer le message de bienvenue de `#annonces` ;
-4. Frontend ;
-5. retirer les routes de transition.
+Ce service et Message-Service partagent `INTERNAL_SERVICE_TOKEN` (route interne d'accès aux salons, événements temps réel).
 
 ## Place du service dans l'architecture du Contrôle 2
 
@@ -392,7 +382,7 @@ Infra --> Docker Compose + PostgreSQL + Redis + configuration globale
 
 Le **Room-Service ne gère volontairement ni Redis, ni WebSocket, ni les messages** : ils appartiennent au `Message-Service`.
 
-Le Dashboard d'administration consulte et supprime les salons via les routes de transition (`GET /api/admin/rooms`, `DELETE /api/rooms/:id`), en attendant de passer à `GET /api/admin/servers`.
+Le Dashboard d'administration utilise `GET /api/admin/servers` (par pages) et les routes des serveurs et salons (un admin y a tous les droits).
 
 ## Vérifications avant remise
 

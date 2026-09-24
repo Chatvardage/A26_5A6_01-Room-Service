@@ -18,7 +18,6 @@ import {
 import { ServersService } from './servers.service';
 import {
   AccesSalonResponse,
-  SalonCompatResponse,
   SalonResponse,
 } from './types/server-response.type';
 
@@ -133,18 +132,6 @@ export class ChannelsService {
     };
   }
 
-  // --- Compatibilité (transition, voir README) ------------------------------------
-
-  /** Ancien `GET /api/admin/rooms` (Dashboard) : tous les salons. */
-  async listerCompatPourAdmin(acteur: Acteur): Promise<SalonCompatResponse[]> {
-    this.servers.exigerAdmin(acteur);
-    const salons = await this.prisma.room.findMany({
-      include: { server: { include: { members: true } } },
-      orderBy: [{ serverId: 'asc' }, { position: 'asc' }],
-    });
-    return salons.map((salon) => this.versCompat(salon));
-  }
-
   // --- Outils -------------------------------------------------------------------
 
   private async chargerSalon(salonId: string, utilisateurId: string) {
@@ -176,41 +163,5 @@ export class ChannelsService {
       'Action réservée aux modérateurs du serveur',
     );
     return { salon, role };
-  }
-
-  private versCompat(salon: {
-    id: string;
-    name: string;
-    serverId: string;
-    createdBy: string | null;
-    access: 'tous' | 'moderateurs';
-    server: {
-      name: string;
-      ownerId: string | null;
-      isDefault: boolean;
-      members: { userId: string; role: 'membre' | 'moderateur' }[];
-    };
-  }): SalonCompatResponse {
-    return {
-      type: 'salon',
-      id: salon.id,
-      nom: salon.name,
-      visibilite: 'public',
-      creePar: salon.createdBy,
-      membreIds: salon.server.members
-        .filter((membre) =>
-          peutVoirSalon(
-            roleEffectif(salon.server, membre, {
-              id: membre.userId,
-              role: 'utilisateur',
-            }),
-            salon,
-          ),
-        )
-        .map((membre) => membre.userId),
-      membresInvites: [],
-      serveurId: salon.serverId,
-      serveurNom: salon.server.name,
-    };
   }
 }

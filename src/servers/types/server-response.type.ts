@@ -79,19 +79,3 @@ export interface AccesSalonResponse {
   peutLire: boolean;
   peutEcrire: boolean;
 }
-
-/**
- * Ancien format « salon » (avant les serveurs), conservé pour la transition :
- * liste admin du Dashboard (GET /api/admin/rooms).
- */
-export interface SalonCompatResponse {
-  type: 'salon';
-  id: string;
-  nom: string;
-  visibilite: 'public';
-  creePar: string | null;
-  membreIds: string[];
-  membresInvites: string[];
-  serveurId: string;
-  serveurNom: string;
-}

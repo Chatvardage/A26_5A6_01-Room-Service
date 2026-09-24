@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
-import { MAX_SERVEURS_POSSEDES, ServersService } from './servers.service';
+import {
+  MAX_INVITATIONS_EN_ATTENTE,
+  MAX_SERVEURS_POSSEDES,
+  ServersService,
+} from './servers.service';
 
 const date = new Date('2026-01-01T00:00:00.000Z');
 
@@ -619,6 +623,26 @@ describe('ServersService', () => {
     it('inviter est idempotent', async () => {
       prisma.server.findUnique.mockResolvedValue(makeServeur());
       await service.inviter('srv-1', 'invite', u('modo'));
+      expect(prisma.serverInvitation.create).not.toHaveBeenCalled();
+    });
+
+    it('inviter : refusé au-delà de MAX_INVITATIONS_EN_ATTENTE, sauf une invitation déjà faite', async () => {
+      const invitations = Array.from(
+        { length: MAX_INVITATIONS_EN_ATTENTE },
+        (_, i) => ({
+          serverId: 'srv-1',
+          userId: `invite-${i}`,
+          invitedBy: 'modo',
+          invitedAt: date,
+        }),
+      );
+      prisma.server.findUnique.mockResolvedValue(makeServeur({ invitations }));
+      await expect(
+        service.inviter('srv-1', 'nouveau', u('modo')),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.serverInvitation.create).not.toHaveBeenCalled();
+      // Idempotence préservée même à la limite.
+      await service.inviter('srv-1', 'invite-0', u('modo'));
       expect(prisma.serverInvitation.create).not.toHaveBeenCalled();
     });
 

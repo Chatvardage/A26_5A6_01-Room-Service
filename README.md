@@ -103,7 +103,7 @@ Toutes les routes sont préfixées par `/api` et exigent un JWT, sauf mention co
 | Méthode | Route | Qui | Description |
 |---|---|---|---|
 | GET | `/api/servers/invitations/me` | connecté | Mes invitations en attente |
-| POST | `/api/servers/:id/invitations` | modérateur | Inviter `{ utilisateurId }` (idempotent ; 409 si déjà membre ; interdit dans Chatvardage) |
+| POST | `/api/servers/:id/invitations` | modérateur | Inviter `{ utilisateurId }` (idempotent ; 409 si déjà membre ; interdit dans Chatvardage ; 200 invitations en attente par serveur au plus, sinon 400) |
 | POST | `/api/servers/:id/invitations/accept` | invité | Accepter (devient membre) |
 | POST | `/api/servers/:id/invitations/refuse` | invité | Refuser |
 

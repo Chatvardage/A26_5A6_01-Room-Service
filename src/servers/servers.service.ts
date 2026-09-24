@@ -35,6 +35,9 @@ const LIMITE_DECOUVERTE = 20;
 // Serveurs qu'un même compte peut posséder : sans plafond, un script pouvait
 // en créer indéfiniment (chacun avec son salon).
 export const MAX_SERVEURS_POSSEDES = 100;
+// Invitations en attente d'un même serveur : sans plafond, un modérateur
+// pouvait en créer indéfiniment, y compris pour des identifiants inventés.
+export const MAX_INVITATIONS_EN_ATTENTE = 200;
 
 export const serveurInclude = {
   members: { orderBy: { joinedAt: 'asc' as const } },
@@ -468,6 +471,11 @@ export class ServersService {
         (invitation) => invitation.userId === utilisateurId,
       )
     ) {
+      if (serveur.invitations.length >= MAX_INVITATIONS_EN_ATTENTE) {
+        throw new BadRequestException(
+          `Limite atteinte : ${MAX_INVITATIONS_EN_ATTENTE} invitations en attente par serveur`,
+        );
+      }
       await this.prisma.serverInvitation.create({
         data: { serverId: id, userId: utilisateurId, invitedBy: acteur.id },
       });

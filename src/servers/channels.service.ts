@@ -21,6 +21,9 @@ import {
   SalonResponse,
 } from './types/server-response.type';
 
+// Salons d'un même serveur (même raison que MAX_SERVEURS_POSSEDES).
+export const MAX_SALONS_PAR_SERVEUR = 200;
+
 @Injectable()
 export class ChannelsService {
   constructor(
@@ -43,6 +46,12 @@ export class ChannelsService {
       peutModerer(role),
       'Action réservée aux modérateurs du serveur',
     );
+
+    if (serveur.channels.length >= MAX_SALONS_PAR_SERVEUR) {
+      throw new BadRequestException(
+        `Limite atteinte : ${MAX_SALONS_PAR_SERVEUR} salons par serveur`,
+      );
+    }
 
     // Nouveau salon en fin de liste.
     const position =

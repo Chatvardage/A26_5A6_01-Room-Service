@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
-import { ServersService } from './servers.service';
+import { MAX_SERVEURS_POSSEDES, ServersService } from './servers.service';
 
 const date = new Date('2026-01-01T00:00:00.000Z');
 
@@ -94,6 +94,7 @@ describe('ServersService', () => {
         update: jest.fn(),
         delete: jest.fn(),
         deleteMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
       serverMember: {
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -284,6 +285,9 @@ describe('ServersService', () => {
         }),
       );
       const serveur = await service.creer({ nom: 'Projet' }, u('bob'));
+      expect(prisma.server.count).toHaveBeenCalledWith({
+        where: { ownerId: 'bob' },
+      });
       expect(prisma.server.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: {
@@ -374,6 +378,14 @@ describe('ServersService', () => {
         service.supprimer(SERVEUR_PAR_DEFAUT_ID, admin),
       ).rejects.toThrow(BadRequestException);
     });
+  });
+
+  it('créer : refusé au-delà de MAX_SERVEURS_POSSEDES', async () => {
+    prisma.server.count.mockResolvedValue(MAX_SERVEURS_POSSEDES);
+    await expect(
+      service.creer({ nom: 'Un de trop' }, u('bob')),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.server.create).not.toHaveBeenCalled();
   });
 
   describe('serveur par défaut : jamais la liste de tous les membres', () => {

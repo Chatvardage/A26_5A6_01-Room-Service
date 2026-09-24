@@ -32,6 +32,9 @@ import {
 
 // Nombre maximal de serveurs publics renvoyés par la recherche.
 const LIMITE_DECOUVERTE = 20;
+// Serveurs qu'un même compte peut posséder : sans plafond, un script pouvait
+// en créer indéfiniment (chacun avec son salon).
+export const MAX_SERVEURS_POSSEDES = 100;
 
 export const serveurInclude = {
   members: { orderBy: { joinedAt: 'asc' as const } },
@@ -241,6 +244,14 @@ export class ServersService {
 
   /** Tout utilisateur peut créer un serveur ; il en devient propriétaire. */
   async creer(dto: CreateServerDto, acteur: Acteur): Promise<ServeurResponse> {
+    const possedes = await this.prisma.server.count({
+      where: { ownerId: acteur.id },
+    });
+    if (possedes >= MAX_SERVEURS_POSSEDES) {
+      throw new BadRequestException(
+        `Limite atteinte : ${MAX_SERVEURS_POSSEDES} serveurs par compte`,
+      );
+    }
     const serveur = await this.prisma.server.create({
       data: {
         name: dto.nom,

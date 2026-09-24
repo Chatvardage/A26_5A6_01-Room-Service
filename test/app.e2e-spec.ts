@@ -104,6 +104,7 @@ describe('Room-Service : serveurs et salons (e2e)', () => {
       server: {
         findMany: jest.fn().mockResolvedValue([chatvardage]),
         findUnique: jest.fn().mockResolvedValue(chatvardage),
+        count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockImplementation(({ data }: any) => ({
           ...chatvardage,
           id: 'srv-nouveau',

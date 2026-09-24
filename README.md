@@ -88,7 +88,7 @@ Toutes les routes sont préfixées par `/api` et exigent un JWT, sauf mention co
 |---|---|---|---|
 | GET | `/api/servers` | connecté | Mes serveurs, Chatvardage en premier (m'y ajoute si besoin) |
 | GET | `/api/servers/decouvrir?q=` | connecté | Serveurs publics dont je ne suis pas membre (nom contenant `q`, 20 max) |
-| POST | `/api/servers` | connecté | Créer un serveur `{ nom, public? }` ; j'en deviens propriétaire |
+| POST | `/api/servers` | connecté | Créer un serveur `{ nom, public? }` ; j'en deviens propriétaire (100 serveurs possédés au plus, sinon 400) |
 | GET | `/api/servers/:id` | membre (aperçu si public) | Détail ; 404 si privé et non-membre |
 | GET | `/api/servers/:id/members?decalage=&limite=&ids=` | membre | Membres par pages (voir ci-dessus) ; 403 si non-membre d'un serveur public |
 | PATCH | `/api/servers/:id` | propriétaire / admin | `{ nom?, public?, icone? }` (icône vide = retirée) ; Chatvardage reste public |
@@ -252,8 +252,11 @@ destinataires. Room-Service n'a ni Redis ni Socket.IO.
 Un salon supprimé (seul, avec son serveur, ou avec le compte de son
 propriétaire) : Message-Service efface aussi ses messages
 (`POST {MESSAGE_SERVICE_URL}/api/internal/salons-supprimes` `{ salonIds }`,
-par lots de 500). Comme les événements, un échec est journalisé sans
-bloquer la suppression.
+par lots de 500, 3 essais par lot). Un échec définitif est journalisé
+(avec les identifiants des salons) sans bloquer la suppression.
+
+Un serveur compte au plus 200 salons : au-delà, `POST /api/servers/:id/channels`
+répond 400.
 
 | Action | `raison` | Destinataires |
 |---|---|---|

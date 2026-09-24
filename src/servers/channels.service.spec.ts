@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChannelsService } from './channels.service';
+import { ChannelsService, MAX_SALONS_PAR_SERVEUR } from './channels.service';
 import { ServersService } from './servers.service';
 
 const date = new Date('2026-01-01T00:00:00.000Z');
@@ -83,6 +83,20 @@ describe('ChannelsService', () => {
   });
 
   describe('creer', () => {
+    it('refusé au-delà de MAX_SALONS_PAR_SERVEUR', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        serveur({
+          channels: Array.from({ length: MAX_SALONS_PAR_SERVEUR }, (_, i) =>
+            salon({ id: `s${i}`, position: i }),
+          ),
+        }),
+      );
+      await expect(
+        service.creer('srv-1', { nom: 'x' }, u('owner')),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.room.create).not.toHaveBeenCalled();
+    });
+
     it('un membre ne peut pas créer de salon', async () => {
       prisma.server.findUnique.mockResolvedValue(serveur());
       await expect(

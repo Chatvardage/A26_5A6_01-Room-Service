@@ -19,6 +19,10 @@ const DELAI_ENVOI_MS = 2000;
 // Salons dont Message-Service efface les messages en un seul appel (borne
 // de sa route interne).
 export const TAILLE_LOT_SALONS = 500;
+// Attentes avant chaque nouvelle tentative de purge (3 essais au total) :
+// un Message-Service indisponible un instant ne doit pas laisser des
+// messages en base pour toujours.
+export const ATTENTES_PURGE_MS = [1000, 4000];
 
 /**
  * Prévient les clients concernés, en temps réel, qu'un serveur a changé.
@@ -52,15 +56,27 @@ export class EvenementsService {
     void this.purgerSalons(salonIds);
   }
 
-  async purgerSalons(salonIds: string[]): Promise<void> {
+  async purgerSalons(
+    salonIds: string[],
+    attentes: number[] = ATTENTES_PURGE_MS,
+  ): Promise<void> {
     for (let i = 0; i < salonIds.length; i += TAILLE_LOT_SALONS) {
       const lot = salonIds.slice(i, i + TAILLE_LOT_SALONS);
-      try {
-        await this.appeler('/api/internal/salons-supprimes', { salonIds: lot });
-      } catch (erreur) {
-        this.logger.warn(
-          `Messages de ${lot.length} salon(s) supprimé(s) non effacés : ${messageErreur(erreur)}`,
-        );
+      for (let tentative = 0; ; tentative += 1) {
+        try {
+          await this.appeler('/api/internal/salons-supprimes', {
+            salonIds: lot,
+          });
+          break;
+        } catch (erreur) {
+          if (tentative >= attentes.length) {
+            this.logger.error(
+              `Messages de ${lot.length} salon(s) supprimé(s) non effacés : ${messageErreur(erreur)} (${lot.join(', ')})`,
+            );
+            break;
+          }
+          await new Promise((fin) => setTimeout(fin, attentes[tentative]));
+        }
       }
     }
   }

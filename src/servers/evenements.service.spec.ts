@@ -124,16 +124,33 @@ describe('EvenementsService', () => {
     });
   });
 
-  it("purge : n'échoue jamais, et continue avec le lot suivant", async () => {
+  it("purge : réessaie, n'échoue jamais, et continue avec le lot suivant", async () => {
+    const erreur = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
     fetchMock
       .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockRejectedValueOnce(new Error('down'))
+      .mockResolvedValueOnce({ ok: false, status: 503 })
       .mockResolvedValueOnce({ ok: true, status: 200 });
     const ids = Array.from(
       { length: TAILLE_LOT_SALONS + 1 },
       (_, i) => `r${i}`,
     );
-    await expect(service.purgerSalons(ids)).resolves.toBeUndefined();
+    await expect(service.purgerSalons(ids, [0, 0])).resolves.toBeUndefined();
+    // Premier lot : 3 échecs (abandon journalisé) ; second lot : réussi.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(erreur).toHaveBeenCalledTimes(1);
+  });
+
+  it('purge : une réussite après un échec ne journalise rien', async () => {
+    const erreur = jest.spyOn((service as any).logger, 'error');
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    await service.purgerSalons(['r1'], [0, 0]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(erreur).not.toHaveBeenCalled();
   });
 
   it('salonsSupprimes ne bloque pas et ne renvoie rien', () => {

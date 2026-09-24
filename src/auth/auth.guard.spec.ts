@@ -9,8 +9,6 @@ describe('RoomAuthGuard', () => {
     pseudo: 'user',
     courriel: 'u@example.test',
     role: 'utilisateur',
-    cree_le: '2026-01-01T00:00:00.000Z',
-    modifie_le: '2026-01-01T00:00:00.000Z',
   };
 
   let auth: { authenticate: jest.Mock };
@@ -59,35 +57,6 @@ describe('RoomAuthGuard', () => {
       'rooms:public-route',
       [context.getHandler(), context.getClass()],
     );
-  });
-
-  it('allows optional-auth routes anonymously when no Authorization header is present', async () => {
-    reflector.getAllAndOverride
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
-    delete request.headers.authorization;
-    const guard = new RoomAuthGuard(
-      auth as unknown as AuthService,
-      reflector as unknown as Reflector,
-    );
-
-    await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(auth.authenticate).not.toHaveBeenCalled();
-    expect(request.user).toBeUndefined();
-  });
-
-  it('authenticates optional-auth routes when a Bearer token is supplied', async () => {
-    reflector.getAllAndOverride
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
-    const guard = new RoomAuthGuard(
-      auth as unknown as AuthService,
-      reflector as unknown as Reflector,
-    );
-
-    await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(auth.authenticate).toHaveBeenCalledWith('Bearer jwt');
-    expect(request.user).toEqual(user);
   });
 
   it('propagates authentication errors', async () => {

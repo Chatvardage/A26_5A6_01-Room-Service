@@ -4,10 +4,10 @@ import { AuthModule } from './auth/auth.module';
 import { RoomAuthGuard } from './auth/auth.guard';
 import { HealthController } from './common/health.controller';
 import { PrismaModule } from './prisma/prisma.module';
-import { RoomsModule } from './rooms/rooms.module';
+import { ServersModule } from './servers/servers.module';
 
 @Module({
-  imports: [AuthModule, PrismaModule, RoomsModule],
+  imports: [AuthModule, PrismaModule, ServersModule],
   controllers: [HealthController],
   providers: [
     {

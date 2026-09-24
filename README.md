@@ -1,8 +1,6 @@
 # Chatvardage — Rooms Service
 
-Microservice de gestion des salons pour le **Contrôle 2 — Backend conteneurisé et services temps réel** du cours 420-5A6-ST.
-
-Ce dépôt contient uniquement le service responsable des salons. Les messages de groupe ne sont pas gérés par ce service pour ce contrôle.
+Microservice des **serveurs et salons** de Chatvardage (Contrôle 2 — Backend conteneurisé et services temps réel, cours 420-5A6-ST), sur le modèle de Discord : un **serveur** regroupe des membres et des **salons**. Les messages eux-mêmes appartiennent à Message-Service.
 
 ## Technologies
 
@@ -12,32 +10,57 @@ Ce dépôt contient uniquement le service responsable des salons. Les messages d
 - Swagger / OpenAPI
 - Docker
 
-## Responsabilités
+## Modèle
 
-Le service permet de :
+- **Serveur** : public (trouvable par recherche, rejoignable librement) ou privé (sur invitation seulement). Tout utilisateur peut en créer un et en devient **propriétaire** ; un salon `#général` est créé avec lui.
+- **Salon** : visible par tous les membres du serveur, sauf s'il est **réservé aux modérateurs** (`acces: 'moderateurs'`). Son **écriture** peut aussi être réservée aux modérateurs (`ecriture: 'moderateurs'`, ex. `#annonces`).
+- **Rôles, par serveur** : `proprietaire` (`Server.ownerId`), `moderateur`, `membre`. L'`admin` global d'Authentification a tous les droits partout. Le rôle global `moderateur` d'Authentification n'accorde **aucun** droit ici : la modération est propre à chaque serveur.
+- **Serveur par défaut « Chatvardage »** : créé par migration, public, sans propriétaire (géré par les admins). Tout utilisateur y est ajouté automatiquement au premier `GET /api/servers`, que le Frontend appelle dès l'ouverture de session (donc dès l'inscription), et ne peut pas le quitter. L'arrivée d'un **nouveau** membre est signalée en temps réel aux autres membres (`membres`). Il contient `#annonces` (lecture pour tous, écriture réservée aux modérateurs, donc aux admins) et `#général`. Identifiants figés (partagés avec Message-Service, qui y insère le message de bienvenue) : voir `src/servers/default-server.ts`. Le Frontend affiche ces deux salons dans la langue de l'utilisateur (`#annonces`/`#announcements`, `#général`/`#general`) en les reconnaissant à leur identifiant **et** à leur nom d'origine : un salon renommé s'affiche tel quel, sans traduction.
 
-- créer un salon public ou privé;
-- récupérer la liste des salons;
-- récupérer un salon;
-- modifier le nom ou la visibilité d'un salon;
-- supprimer un salon;
-- gérer les membres;
-- inviter un utilisateur dans un salon privé;
-- accepter ou refuser une invitation;
-- rejoindre ou quitter un salon;
-- conserver les salons dans PostgreSQL.
+Format d'un serveur :
 
-Le modèle retourné par l'API reste compatible avec le modèle `Salon` du client Electron du contrôle 1 :
+```ts
+{
+  type: 'serveur',
+  id: string,
+  nom: string,
+  icone: string | null,            // data URL PNG/JPEG/WebP
+  public: boolean,
+  parDefaut: boolean,
+  proprietaireId: string | null,
+  monRole: 'admin' | 'proprietaire' | 'moderateur' | 'membre' | null, // null = aperçu
+  nombreMembres: number,
+  salons: Salon[],                 // salons visibles par l'appelant
+  invitations: string[]            // en attente ; modérateurs et plus seulement
+}
+```
+
+La liste des membres n'est **pas** incluse : tout le monde est membre du serveur par défaut, elle grossirait avec le nombre de comptes (et chaque inscription fait recharger la liste des serveurs à tous). Elle se lit par pages avec `GET /api/servers/:id/members` :
+
+```ts
+// ?decalage=0&limite=50 (100 au plus), ou ?ids=a,b,c (100 au plus, sans pagination)
+{
+  membres: { utilisateurId: string; role: 'proprietaire' | 'moderateur' | 'membre' }[],
+  total: number,
+  suivant: number | null           // decalage de la page suivante
+}
+```
+
+Ordre : le propriétaire en tête de la première page, puis les modérateurs, puis les membres, par ancienneté. `ids` sert à savoir lesquels de ces utilisateurs sont déjà membres (fenêtre « Inviter »).
+
+Format d'un salon :
 
 ```ts
 {
   type: 'salon',
   id: string,
+  serveurId: string,
   nom: string,
-  visibilite: 'public' | 'prive',
-  hoteId: string,
-  membreIds: string[],
-  membresInvites: string[]
+  position: number,
+  acces: 'tous' | 'moderateurs',
+  ecriture: 'tous' | 'moderateurs',
+  peutEcrire: boolean,             // pour l'appelant
+  creePar: string | null
 }
 ```
 
@@ -49,43 +72,88 @@ Pour chaque action protégée, il appelle `GET /api/auth/me` du service Auth. Au
 
 En intégration Docker locale, le service Auth peut être joint en HTTP sur un réseau de développement. `AUTH_SERVICE_URL` doit désigner uniquement l’origine du service Auth (par exemple `http://auth-service:3001`), sans chemin, paramètres de requête ni fragment. En production (`NODE_ENV=production`), cette URL doit obligatoirement utiliser `https://`; le Rooms Service refuse de démarrer avec une configuration Auth invalide ou non sécurisée.
 
-Le Rooms Service valide volontairement l’utilisateur auprès du service Auth à chaque route protégée, sans cache, afin que les révocations et changements de rôle soient pris en compte immédiatement. Ce choix ajoute un appel réseau par requête protégée; si Auth est indisponible ou dépasse le délai configuré par `AUTH_TIMEOUT_MS` (3 000 ms par défaut), Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes. Une réponse Auth 2xx au format JSON invalide est traitée comme une erreur 502 (réponse incorrecte du service en amont), tandis qu’une indisponibilité réseau ou un 5xx Auth reste une erreur 503. Les journaux distinguent un dépassement du délai configuré d’une erreur réseau afin de faciliter le diagnostic.
+Le Rooms Service valide l’utilisateur auprès du service Auth pour chaque route protégée, avec un **cache court** : un jeton validé est mémorisé `AUTH_CACHE_TTL_MS` millisecondes (10 000 par défaut, `0` pour interroger Auth à chaque requête). Compromis assumé : une révocation (mot de passe changé, compte supprimé) ou un changement de rôle est pris en compte au plus tard à l’expiration de l’entrée. Les refus (401/403) et les pannes ne sont jamais mémorisés, et des requêtes simultanées avec le même jeton ne font qu’un appel. Si Auth est indisponible ou dépasse `AUTH_SERVICE_TIMEOUT_MS` (3 000 ms par défaut), Rooms Service retourne une erreur 503. Les réponses 401 et 403 du service Auth sont conservées comme erreurs d’authentification/autorisation distinctes. Une réponse Auth 2xx au format JSON invalide est traitée comme une erreur 502 (réponse incorrecte du service en amont), tandis qu’une indisponibilité réseau ou un 5xx Auth reste une erreur 503. Les journaux distinguent un dépassement du délai configuré d’une erreur réseau afin de faciliter le diagnostic. Ce client est le fichier partagé `src/partage/client-auth.ts`, identique dans Message-Service.
 
 Sous Node.js 22, le `fetch` natif s’appuie sur le dispatcher global d’Undici, qui réutilise les connexions HTTP. Aucun pool HTTP supplémentaire n’est donc configuré dans le Room-Service.
 
-Un `RoomAuthGuard` NestJS est enregistré globalement via `APP_GUARD` : toute nouvelle route est donc protégée par défaut. Les exceptions doivent être explicitement marquées avec `@PublicRoute()` ou `@OptionalAuthRoute()`. `GET /api/health` est public. `GET /api/rooms` et `GET /api/rooms/:id` utilisent une authentification optionnelle : sans en-tête `Authorization`, seuls les salons publics sont visibles; avec un JWT valide, la liste inclut aussi les salons privés dont l’utilisateur est membre et le détail d’un tel salon devient accessible. Si un en-tête `Authorization` est présent mais que le jeton est invalide ou expiré, la requête échoue avec l’erreur d’authentification correspondante au lieu d’être traitée comme anonyme. Un salon privé inaccessible reçoit la même réponse 404 qu’un salon inexistant afin d’éviter l’énumération. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution des gestionnaires protégés.
+Un `RoomAuthGuard` NestJS est enregistré globalement via `APP_GUARD` : toute nouvelle route est donc protégée par défaut. Les exceptions doivent être explicitement marquées avec `@PublicRoute()`. `GET /api/health` est public. Les routes `/api/internal/*` sont marquées publiques pour le JWT mais protégées par un **jeton interne** (voir [Route interne](#route-interne-message-service)). Un serveur privé inaccessible reçoit la même réponse 404 qu’un serveur inexistant afin d’éviter l’énumération. L’utilisateur authentifié est attaché à la requête par le guard avant l’exécution des gestionnaires protégés.
 
 ## Routes
 
-Toutes les routes sont préfixées par `/api`.
+Toutes les routes sont préfixées par `/api` et exigent un JWT, sauf mention contraire.
+
+### Serveurs
+
+| Méthode | Route | Qui | Description |
+|---|---|---|---|
+| GET | `/api/servers` | connecté | Mes serveurs, Chatvardage en premier (m'y ajoute si besoin) |
+| GET | `/api/servers/decouvrir?q=` | connecté | Serveurs publics dont je ne suis pas membre (nom contenant `q`, 20 max) |
+| POST | `/api/servers` | connecté | Créer un serveur `{ nom, public? }` ; j'en deviens propriétaire (100 serveurs possédés au plus, sinon 400) |
+| GET | `/api/servers/:id` | membre (aperçu si public) | Détail ; 404 si privé et non-membre |
+| GET | `/api/servers/:id/members?decalage=&limite=&ids=` | membre | Membres par pages (voir ci-dessus) ; 403 si non-membre d'un serveur public |
+| PATCH | `/api/servers/:id` | propriétaire / admin | `{ nom?, public?, icone? }` (icône vide = retirée) ; Chatvardage reste public |
+| DELETE | `/api/servers/:id` | propriétaire / admin | Supprime le serveur et ses salons ; interdit pour Chatvardage |
+| POST | `/api/servers/:id/join` | connecté | Rejoindre un serveur public, ou privé si invité |
+| POST | `/api/servers/:id/leave` | membre | Quitter ; interdit au propriétaire et pour Chatvardage |
+| DELETE | `/api/servers/:id/members/:userId` | modérateur+ | Expulser, seulement un membre de rang inférieur ; interdit dans Chatvardage |
+| PATCH | `/api/servers/:id/members/:userId` | propriétaire / admin | `{ role: 'membre' \| 'moderateur' }` |
+
+### Invitations
+
+| Méthode | Route | Qui | Description |
+|---|---|---|---|
+| GET | `/api/servers/invitations/me` | connecté | Mes invitations en attente |
+| POST | `/api/servers/:id/invitations` | modérateur | Inviter `{ utilisateurId }` (idempotent ; 409 si déjà membre ; interdit dans Chatvardage ; 200 invitations en attente par serveur au plus, sinon 400) |
+| POST | `/api/servers/:id/invitations/accept` | invité | Accepter (devient membre) |
+| POST | `/api/servers/:id/invitations/refuse` | invité | Refuser |
+
+### Salons
+
+| Méthode | Route | Qui | Description |
+|---|---|---|---|
+| POST | `/api/servers/:id/channels` | modérateur+ | Créer `{ nom, acces?, ecriture? }`, en fin de liste |
+| PATCH | `/api/channels/:id` | modérateur+ | `{ nom?, acces?, ecriture?, position? }` |
+| DELETE | `/api/channels/:id` | modérateur+ | Supprimer ; un serveur garde au moins un salon |
+
+### Administration
+
+| Méthode | Route | Qui | Description |
+|---|---|---|---|
+| GET | `/api/admin/servers?decalage=&limite=` | admin | Tous les serveurs, par pages : `{ serveurs, total, suivant }` (50 par défaut, 100 au plus) |
+
+### Route interne (Message-Service)
+
+| Méthode | Route | Protection | Description |
+|---|---|---|---|
+| GET | `/api/internal/channels/:id/access/:userId?role=` | en-tête `x-internal-token` = `INTERNAL_SERVICE_TOKEN` | `{ salonId, serveurId, estMembre, peutLire, peutEcrire, peutModerer }` (`peutModerer` : modérateur du serveur, propriétaire ou admin, qui peut supprimer les messages des autres) |
+| DELETE | `/api/internal/users/:userId` | idem (appelée par Authentification) | Compte supprimé : ses serveurs (et leurs salons) sont supprimés, il quitte les autres, ses invitations reçues disparaissent. Idempotent. Réponse `{ serveursSupprimes, serveursQuittes, invitationsSupprimees }` |
+
+`role` est le rôle global (`admin` \| `moderateur` \| `utilisateur`, défaut `utilisateur`) issu du JWT que Message-Service a déjà validé. Sans `INTERNAL_SERVICE_TOKEN` configuré, la route répond toujours 503 (échec fermé). **Serveur-API ne relaie pas `/api/internal`** : seuls les autres microservices, sur le réseau Docker interne, peuvent l'appeler. Le port du Room-Service ne doit pas être exposé publiquement.
+
+### Anciennes routes (retirées)
+
+Les routes de l'ancien contrat « salons autonomes » (`GET /api/rooms/:id`, `GET /api/admin/rooms`, `DELETE /api/rooms/:id`) n'existent plus. Le Dashboard doit utiliser `GET /api/admin/servers` (par pages), puis `GET /api/servers/:id` et `GET /api/servers/:id/members`, et `DELETE /api/channels/:id` (un admin a tous les droits).
+
+### Santé
 
 | Méthode | Route | Description |
 |---|---|---|
-| GET | `/api/rooms` | Liste des salons publics; avec JWT, inclut aussi les salons privés dont l’utilisateur est membre |
-| GET | `/api/rooms/:id` | Obtenir un salon public; avec JWT, un salon privé dont l’utilisateur est membre |
-| GET | `/api/admin/rooms` | Lister tous les salons pour le panneau d’administration (admin seulement) |
-| POST | `/api/rooms` | Créer un salon |
-| PATCH | `/api/rooms/:id` | Modifier un salon |
-| DELETE | `/api/rooms/:id` | Supprimer un salon |
-| GET | `/api/rooms/invitations/me` | Invitations de l'utilisateur connecté |
-| POST | `/api/rooms/:id/invitations` | Inviter un utilisateur (idempotent : aucun doublon si déjà membre ou invité) |
-| POST | `/api/rooms/:id/invitations/accept` | Accepter une invitation |
-| POST | `/api/rooms/:id/invitations/refuse` | Refuser une invitation |
-| POST | `/api/rooms/:id/join` | Rejoindre un salon |
-| POST | `/api/rooms/:id/leave` | Quitter un salon |
-| GET | `/api/health` | Vérifier le service et PostgreSQL |
-
-Le panneau d’administration utilise `GET /api/admin/rooms` pour voir tous les salons, publics et privés. Pour supprimer un salon, un administrateur peut utiliser `DELETE /api/rooms/:id`, qui autorise l’hôte du salon ou le rôle `admin`.
+| GET | `/api/health` | Service et PostgreSQL (public) |
 
 ## Permissions
 
-- Le créateur d'un salon devient automatiquement son hôte et son premier membre.
-- Seul l'hôte ou un administrateur peut modifier ou supprimer un salon.
-- Un administrateur peut lister tous les salons via `GET /api/admin/rooms`; `moderateur` et `utilisateur` reçoivent 403.
-- Seul l'hôte ou un administrateur peut inviter dans un salon privé.
-- Un utilisateur peut rejoindre librement un salon public.
-- Un utilisateur doit être invité pour rejoindre un salon privé.
-- L'hôte ne peut pas quitter son propre salon; il doit supprimer le salon.
+Rôle **effectif** dans un serveur (voir `src/servers/permissions.ts`, seul endroit où ces règles sont codées) : `admin` (global) > `proprietaire` > `moderateur` > `membre`.
+
+| Action | membre | modérateur | propriétaire | admin |
+|---|:-:|:-:|:-:|:-:|
+| Voir les salons ouverts, écrire là où l'écriture est ouverte | ✅ | ✅ | ✅ | ✅ |
+| Voir / écrire dans un salon réservé aux modérateurs, écrire dans `#annonces` | | ✅ | ✅ | ✅ |
+| Inviter | | ✅ | ✅ | ✅ |
+| Voir les invitations en attente | | ✅ | ✅ | ✅ |
+| Créer / modifier / supprimer des salons | | ✅ | ✅ | ✅ |
+| Expulser (seulement un rang inférieur) | | ✅ | ✅ | ✅ |
+| Nommer / retirer des modérateurs | | | ✅ | ✅ |
+| Renommer, icône, public/privé, supprimer le serveur | | | ✅ | ✅ |
 
 ## Installation locale
 
@@ -101,7 +169,7 @@ docker compose -f compose.local.yml up --build
 
 Le Compose local crée une base `chatvardage_rooms` avec l'utilisateur `room_service`, exactement comme `.env.example`.
 
-Par défaut, ce compose force `NODE_ENV=development`, cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL`, `AUTH_TIMEOUT_MS` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire. Sous Linux, l'alias `host.docker.internal` repose sur `host-gateway`, disponible avec Docker Engine 20.10 ou plus récent.
+Par défaut, ce compose force `NODE_ENV=development`, cherche le service Auth sur l'hôte à l'adresse `http://host.docker.internal:3001` et autorise `http://localhost:5173` pour CORS. Les variables `AUTH_SERVICE_URL`, `AUTH_SERVICE_TIMEOUT_MS` et `CORS_ORIGINS` peuvent être redéfinies au lancement si nécessaire. Sous Linux, l'alias `host.docker.internal` repose sur `host-gateway`, disponible avec Docker Engine 20.10 ou plus récent.
 
 ### Option Node.js + PostgreSQL local
 
@@ -160,87 +228,116 @@ NODE_ENV=development
 PORT=3003
 DATABASE_URL="postgresql://room_service:room_service_dev@localhost:5432/chatvardage_rooms?schema=public"
 AUTH_SERVICE_URL="http://localhost:3001"
-AUTH_TIMEOUT_MS=3000
+AUTH_SERVICE_TIMEOUT_MS=3000
+# 0 = appel à Auth à chaque requête (voir « Authentification »).
+AUTH_CACHE_TTL_MS=10000
 CORS_ORIGINS="http://localhost:5173"
+# Secret partagé avec Message-Service pour /api/internal (voir « Route interne »).
+INTERNAL_SERVICE_TOKEN="changez-moi-en-une-longue-valeur-aleatoire"
+# Message-Service, prévenu de chaque changement (voir « Temps réel »).
+MESSAGE_SERVICE_URL="http://localhost:3004"
 ```
 
-## Exemple — créer un salon
+### En production (`NODE_ENV=production`)
+
+Le service **refuse de démarrer** si `INTERNAL_SERVICE_TOKEN` fait moins de 32 caractères (la valeur de développement `chatvardage_internal_dev` en fait 24), ou si le mot de passe de `DATABASE_URL` est l'un des mots de passe de développement de l'Infra (`room_service_dev`, `postgres`…) — voir `src/partage/secrets-production.ts`. `CORS_ORIGINS` doit aussi y être défini, sans origine locale. Le message d'erreur liste tous les problèmes d'un coup ; en développement, les valeurs par défaut de l'Infra restent acceptées. Générer de vraies valeurs, par ex. `openssl rand -hex 32`.
+
+## Temps réel
+
+Après chaque changement, le service prévient Message-Service
+(`POST {MESSAGE_SERVICE_URL}/api/internal/events`, même `INTERNAL_SERVICE_TOKEN`),
+qui relaie `serveur.change` `{ serveurId, raison, cibleId }` aux sockets des
+destinataires. Room-Service n'a ni Redis ni Socket.IO.
+
+Un salon supprimé (seul, avec son serveur, ou avec le compte de son
+propriétaire) : Message-Service efface aussi ses messages
+(`POST {MESSAGE_SERVICE_URL}/api/internal/salons-supprimes` `{ salonIds }`,
+par lots de 500, 3 essais par lot). Un échec définitif est journalisé
+(avec les identifiants des salons) sans bloquer la suppression.
+
+Un serveur compte au plus 200 salons : au-delà, `POST /api/servers/:id/channels`
+répond 400.
+
+Ces plafonds (serveurs possédés, salons, invitations en attente) sont des
+garde-fous contre l'abus, pas des contraintes en base : la vérification et
+la création ne sont pas dans une même transaction, donc deux requêtes
+simultanées à la limite peuvent la dépasser d'une unité. Limite connue et
+acceptée.
+
+| Action | `raison` | Destinataires |
+|---|---|---|
+| Modifier le serveur | `modifie` | membres |
+| Supprimer le serveur | `supprime` | membres d'avant la suppression |
+| Rejoindre / quitter / accepter ou refuser une invitation / changer un rôle | `membres` | membres (+ la personne concernée) |
+| Expulser | `expulse` | membres d'avant, **expulsé compris** |
+| Inviter | `invitation` | membres + l'invité |
+| Créer / modifier / supprimer un salon | `salons` | membres |
+
+**Serveur par défaut « Chatvardage »** : tout le monde en est membre, donc
+l'événement est envoyé avec `tous: true` (sans liste de destinataires, qui
+dépasserait la taille maximale d'une requête) et Message-Service le diffuse à
+tous les clients connectés. Une simple arrivée dans ce serveur (première
+connexion d'un compte) n'envoie **aucun** événement : elle ne change que le
+nombre de membres, et faisait recharger la page de tout le monde.
+
+« Tire et oublie » (voir `EvenementsService`) : l'appel n'est jamais attendu
+et un échec est seulement journalisé ; une action ne peut pas échouer à
+cause du temps réel. Sans `INTERNAL_SERVICE_TOKEN`, rien n'est envoyé.
+
+## Exemple — créer un serveur et inviter
+
+Tout utilisateur connecté peut créer un serveur :
 
 ```bash
-curl -X POST http://localhost:3003/api/rooms \
+curl -X POST http://localhost:3003/api/servers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <JWT_USER_1>" \
-  -d '{"nom":"general","visibilite":"public"}'
+  -d '{"nom":"Projet final","public":false}'
 ```
 
-Réponse :
-
-```json
-{
-  "type": "salon",
-  "id": "...",
-  "nom": "general",
-  "visibilite": "public",
-  "hoteId": "user-1",
-  "membreIds": ["user-1"],
-  "membresInvites": []
-}
-```
-
-## Exemple — salon privé et invitation
-
-Créer le salon :
+Inviter un utilisateur (modérateur, propriétaire ou admin) :
 
 ```bash
-curl -X POST http://localhost:3003/api/rooms \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <JWT_USER_1>" \
-  -d '{"nom":"equipe-privee","visibilite":"prive"}'
-```
-
-Inviter un utilisateur :
-
-```bash
-curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations \
+curl -X POST http://localhost:3003/api/servers/<SERVER_ID>/invitations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <JWT_USER_1>" \
   -d '{"utilisateurId":"user-2"}'
 ```
 
-Cette opération est idempotente : si l’utilisateur est déjà membre du salon ou possède déjà une invitation, aucun doublon n’est créé et l’état courant du salon est retourné.
-
-Accepter l'invitation avec `user-2` :
+L'invité accepte :
 
 ```bash
-curl -X POST http://localhost:3003/api/rooms/<ROOM_ID>/invitations/accept \
+curl -X POST http://localhost:3003/api/servers/<SERVER_ID>/invitations/accept \
   -H "Authorization: Bearer <JWT_USER_2>"
+```
+
+Créer un salon réservé aux modérateurs, puis nommer un modérateur (propriétaire) :
+
+```bash
+curl -X POST http://localhost:3003/api/servers/<SERVER_ID>/channels \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <JWT_USER_1>" \
+  -d '{"nom":"modération","acces":"moderateurs"}'
+
+curl -X PATCH http://localhost:3003/api/servers/<SERVER_ID>/members/user-2 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <JWT_USER_1>" \
+  -d '{"role":"moderateur"}'
 ```
 
 ## Base de données
 
-Le service possède trois modèles :
-
 ```text
-Room
-├── id
-├── name
-├── visibility
-├── ownerId
-├── createdAt
-└── updatedAt
-
-RoomMember
-├── roomId
-├── userId
-└── joinedAt
-
-RoomInvitation
-├── roomId
-├── userId
-└── invitedAt
+Server            id, name, icon?, ownerId?, isPublic, isDefault, createdAt, updatedAt
+ServerMember      serverId, userId, role (membre | moderateur), joinedAt
+ServerInvitation  serverId, userId, invitedBy, invitedAt
+Room (= salon)    id, serverId, name, position, access (tous | moderateurs),
+                  writePolicy (tous | moderateurs), createdBy?, createdAt, updatedAt
 ```
 
-Les identifiants utilisateurs sont conservés sous forme de chaînes plutôt que comme clés étrangères vers `User`, car le modèle utilisateur appartient au Auth/User Service.
+Le modèle `Room` garde son nom : ses identifiants sont ceux que Message-Service stocke (`RoomMessage.roomId`). Les identifiants utilisateurs restent des chaînes, sans clé étrangère : les utilisateurs appartiennent au service d'authentification.
+
+La migration `20260924100000_serveurs` **repart à zéro** (décision d'équipe) : elle supprime les anciens salons, membres et invitations, puis crée Chatvardage avec `#annonces` et `#général`.
 
 ## Migration Prisma
 
@@ -275,9 +372,9 @@ Réponse attendue :
 
 ## Intégration avec Chatvardage
 
-Le service reprend la logique de salon déjà présente dans le contrôle 1, mais remplace le stockage local/simulé par PostgreSQL.
+Les messages des salons sont stockés et diffusés par Message-Service, qui vérifie auprès de ce service, via la route interne, qu'un utilisateur peut lire ou écrire dans un salon (écriture réservée de `#annonces`, salons réservés aux modérateurs).
 
-Les messages envoyés dans les salons peuvent rester simulés dans le client Electron pour ce contrôle. Le vrai temps réel demandé concerne les messages privés, qui sont gérés par le Messaging Service.
+Ce service et Message-Service partagent `INTERNAL_SERVICE_TOKEN` (route interne d'accès aux salons, événements temps réel).
 
 ## Place du service dans l'architecture du Contrôle 2
 
@@ -299,9 +396,9 @@ Dashboard Admin --> Serveur-API
 Infra --> Docker Compose + PostgreSQL + Redis + configuration globale
 ```
 
-Le **Room-Service ne gère volontairement ni Redis, ni WebSocket, ni les messages de groupe**. Pour le Contrôle 2, le temps réel demandé concerne les messages privés et appartient au `Message-Service`. Les messages de salons restent simulés jusqu'au contrôle ultérieur, conformément à l'énoncé.
+Le **Room-Service ne gère volontairement ni Redis, ni WebSocket, ni les messages** : ils appartiennent au `Message-Service`.
 
-Le Dashboard d'administration peut consulter et supprimer les salons en passant par le Serveur-API, qui transmet ensuite les requêtes autorisées à ce service.
+Le Dashboard d'administration utilise `GET /api/admin/servers` (par pages) et les routes des serveurs et salons (un admin y a tous les droits).
 
 ## Vérifications avant remise
 
@@ -320,6 +417,7 @@ npx prisma generate
 npm run build
 npm test
 npm run test:e2e
+npm run test:cov   # 100 % exigé
 npm run lint
 ```
 

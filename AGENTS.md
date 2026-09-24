@@ -11,7 +11,7 @@ Architecture d'équipe :
 - `Frontend` : Electron et ChatGateway réel.
 - `Serveur-API` : API Gateway / point d'entrée unique.
 - `Authentification` : utilisateurs, authentification et rôles.
-- `Room-Service` : gestion et administration des salons.
+- `Room-Service` : serveurs (façon Discord), leurs membres, rôles et salons.
 - `Message-Service` : messages privés, historique et temps réel.
 - `User-Config-Service` : alias, thème et préférences.
 - `Dashboard` : panneau d'administration / AdminJS.
@@ -35,13 +35,12 @@ Le Room-Service ne doit **pas** prendre en charge les messages privés, Redis, l
 
 Le service doit conserver la responsabilité de :
 
-- créer, lire, modifier et supprimer des salons;
-- gérer les salons publics et privés;
-- gérer l'hôte et les membres;
-- gérer les invitations aux salons privés;
-- rejoindre et quitter un salon;
-- appliquer les permissions hôte/admin;
-- persister les salons, membres et invitations dans PostgreSQL;
+- créer, lire, modifier et supprimer des serveurs (publics ou privés) et leurs salons;
+- gérer les membres d'un serveur, leurs rôles (propriétaire, modérateur, membre) et les invitations;
+- gérer le serveur par défaut « Chatvardage » (tout le monde en est membre, impossible à quitter);
+- appliquer les permissions selon le rôle de l'appelant DANS le serveur (seul l'`admin` global d'Authentification a des droits partout);
+- exposer à Message-Service, par une route interne protégée par jeton, l'accès d'un utilisateur à un salon;
+- persister serveurs, membres, invitations et salons dans PostgreSQL;
 - exposer un healthcheck pour le service et PostgreSQL.
 
 Ne pas déplacer ici les responsabilités des autres microservices.
@@ -62,29 +61,24 @@ Toutes les routes sont sous `/api`. Swagger est exposé sous `/docs`.
 
 ## Contrat de données avec le Frontend
 
-Conserver, sauf changement coordonné entre les dépôts, le format de salon compatible avec le client Electron :
+Formats `serveur` et `salon` : voir le README (section « Modèle »). Tout changement de ces formats doit être coordonné avec le Frontend et Message-Service.
 
-```ts
-{
-  type: 'salon',
-  id: string,
-  nom: string,
-  visibilite: 'public' | 'prive',
-  hoteId: string,
-  membreIds: string[],
-  membresInvites: string[]
-}
-```
+Les règles de permission sont codées **uniquement** dans `src/servers/permissions.ts` (rôle effectif, visibilité et écriture d'un salon, expulsion). Services, contrôleurs et route interne doivent s'appuyer sur ces fonctions plutôt que de réécrire une règle.
 
-Les `userId` restent des chaînes. Ne pas ajouter de table `User` ou de clé étrangère vers un utilisateur : les utilisateurs appartiennent au service d'authentification.
+Les identifiants du serveur par défaut et de ses salons (`src/servers/default-server.ts`) sont figés par la migration `20260924100000_serveurs` et partagés avec Message-Service : ne jamais les modifier. Le Frontend s'appuie aussi dessus (et sur les noms d'origine `annonces` / `général`) pour traduire ces deux salons (`SALONS_PAR_DEFAUT` dans `src/presentation/pages/javascript/logique-interface.js`).
+
+Les changements de serveur sont signalés à Message-Service par `EvenementsService` (appel HTTP interne « tire et oublie ») : toute nouvelle action qui modifie un serveur, ses membres, ses invitations ou ses salons doit appeler `evenements.notifier(...)` avec les bons destinataires (voir le tableau « Temps réel » du README). Ne pas ajouter Redis ni Socket.IO ici pour autant.
+
+Les anciennes routes « salons autonomes » (`/api/rooms/*`, `GET /api/admin/rooms`) ont été retirées : ne pas les réintroduire, le Dashboard passe par `AdminController` (`GET /api/admin/servers`) et les routes des serveurs. Ne pas réintroduire de route lisible sans JWT : l'ancien `GET /api/rooms/:id` (authentification optionnelle) exposait le nom et les membres de serveurs privés. Les `userId` restent des chaînes. Ne pas ajouter de table `User` ou de clé étrangère vers un utilisateur : les utilisateurs appartiennent au service d'authentification.
 
 ## Base de données et Prisma
 
 Schéma principal :
 
-- `Room`
-- `RoomMember`
-- `RoomInvitation`
+- `Server`
+- `ServerMember`
+- `ServerInvitation`
+- `Room` (un salon d'un serveur)
 
 Les migrations Prisma sont versionnées dans `prisma/migrations/`.
 
@@ -155,12 +149,21 @@ Les tests E2E doivent refléter les routes actuelles du Room-Service et ne doive
 - Respecter ESLint et Prettier existants.
 - Garder TypeScript typé; éviter `any` dans le code de production.
 - Garder les contrôleurs minces : validation HTTP/headers et délégation au service.
-- Garder la logique métier dans `RoomsService`.
+- Garder la logique métier dans `ServersService` / `ChannelsService`, et les règles de permission dans `permissions.ts`.
 - Garder l'accès aux données via Prisma.
 - Réutiliser les helpers de permissions au lieu de dupliquer les règles.
 - Valider les entrées avec les DTO et `class-validator`.
 - Retourner des erreurs HTTP NestJS explicites (`BadRequestException`, `ForbiddenException`, `NotFoundException`, etc.).
 - Ne pas laisser de code généré, mort ou de dépendances inutilisées.
+
+## Fichiers partagés (`src/partage/`)
+
+`src/partage/` contient des fichiers **identiques à l'octet près** dans plusieurs dépôts :
+
+- `client-auth.ts` (+ spec) : validation du JWT auprès d'Authentification, avec cache — identique dans Message-Service ;
+- `secrets-production.ts` (+ spec) : refus de démarrer en production avec les secrets de développement — identique dans Message-Service et User-Config-Service.
+
+Ne pas les modifier dans un seul dépôt : reporter le même changement partout, puis lancer `A26_5A6_01-Infra/scripts/verifier-fichiers-partages.sh`. Ce qui est propre au service (par exemple les secrets exigés) se passe en paramètre depuis `main.ts` ou `auth/auth.service.ts`.
 
 ## Docker
 

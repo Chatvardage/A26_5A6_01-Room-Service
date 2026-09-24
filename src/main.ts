@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { verifierSecretsProduction } from './partage/secrets-production';
 
 function validateCorsOrigin(origin: string): string {
   let parsedOrigin: URL;
@@ -71,7 +72,14 @@ export function resolveCorsOrigins(): string[] {
 }
 
 async function bootstrap() {
+  // Avant tout : pas de démarrage en production avec des secrets de dev.
+  verifierSecretsProduction({
+    jetonInterne: true,
+    urlsAvecMotDePasse: ['DATABASE_URL'],
+  });
   const app = await NestFactory.create(AppModule);
+  // SIGTERM (docker stop) : fermeture propre (connexions Prisma).
+  app.enableShutdownHooks();
 
   app.setGlobalPrefix('api');
   const origins = resolveCorsOrigins();

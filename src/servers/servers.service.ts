@@ -484,9 +484,13 @@ export class ServersService {
     acteur: Acteur,
   ): Promise<ServeurResponse> {
     await this.invitationOuErreur(id, acteur);
-    await this.prisma.$transaction([
-      this.prisma.serverInvitation.delete({
-        where: { serverId_userId: { serverId: id, userId: acteur.id } },
+    // deleteMany plutôt que delete : deux acceptations simultanées (double
+    // clic) passent toutes deux la vérification ci-dessus ; la seconde ne
+    // doit pas échouer en 500 (P2025), ni prévenir les membres une seconde
+    // fois.
+    const [{ count }] = await this.prisma.$transaction([
+      this.prisma.serverInvitation.deleteMany({
+        where: { serverId: id, userId: acteur.id },
       }),
       this.prisma.serverMember.upsert({
         where: { serverId_userId: { serverId: id, userId: acteur.id } },
@@ -494,18 +498,23 @@ export class ServersService {
         create: { serverId: id, userId: acteur.id },
       }),
     ]);
-    // Destinataires par défaut : membres actuels, nouveau membre compris.
-    this.evenements.notifier(id, 'membres', { cibleId: acteur.id });
+    if (count > 0) {
+      // Destinataires par défaut : membres actuels, nouveau membre compris.
+      this.evenements.notifier(id, 'membres', { cibleId: acteur.id });
+    }
     return this.obtenir(id, acteur);
   }
 
   async refuserInvitation(id: string, acteur: Acteur): Promise<void> {
     await this.invitationOuErreur(id, acteur);
-    await this.prisma.serverInvitation.delete({
-      where: { serverId_userId: { serverId: id, userId: acteur.id } },
+    // Même raison que dans accepterInvitation.
+    const { count } = await this.prisma.serverInvitation.deleteMany({
+      where: { serverId: id, userId: acteur.id },
     });
-    // Les modérateurs voient les invitations en attente.
-    this.evenements.notifier(id, 'membres', { cibleId: acteur.id });
+    if (count > 0) {
+      // Les modérateurs voient les invitations en attente.
+      this.evenements.notifier(id, 'membres', { cibleId: acteur.id });
+    }
   }
 
   // --- Outils partagés (aussi utilisés par ChannelsService) ---------------------

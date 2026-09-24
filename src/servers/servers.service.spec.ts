@@ -596,8 +596,11 @@ describe('ServersService', () => {
       prisma.server.findUnique.mockResolvedValue(
         makeServeur({ members: [membre('owner'), membre('invite')] }),
       );
+      prisma.serverInvitation.deleteMany.mockResolvedValue({ count: 1 });
       const serveur = await service.accepterInvitation('srv-1', u('invite'));
-      expect(prisma.serverInvitation.delete).toHaveBeenCalled();
+      expect(prisma.serverInvitation.deleteMany).toHaveBeenCalledWith({
+        where: { serverId: 'srv-1', userId: 'invite' },
+      });
       expect(prisma.serverMember.upsert).toHaveBeenCalled();
       expect(serveur.monRole).toBe('membre');
     });
@@ -606,10 +609,26 @@ describe('ServersService', () => {
       prisma.serverInvitation.findUnique.mockResolvedValue({
         userId: 'invite',
       });
+      prisma.serverInvitation.deleteMany.mockResolvedValue({ count: 1 });
       await service.refuserInvitation('srv-1', u('invite'));
-      expect(prisma.serverInvitation.delete).toHaveBeenCalledWith({
-        where: { serverId_userId: { serverId: 'srv-1', userId: 'invite' } },
+      expect(prisma.serverInvitation.deleteMany).toHaveBeenCalledWith({
+        where: { serverId: 'srv-1', userId: 'invite' },
       });
+    });
+
+    it('accepter / refuser en double (double clic) : ni erreur ni second événement', async () => {
+      prisma.serverInvitation.findUnique.mockResolvedValue({
+        userId: 'invite',
+      });
+      // L'autre requête a déjà consommé l'invitation.
+      prisma.serverInvitation.deleteMany.mockResolvedValue({ count: 0 });
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ members: [membre('owner'), membre('invite')] }),
+      );
+      const serveur = await service.accepterInvitation('srv-1', u('invite'));
+      await service.refuserInvitation('srv-1', u('invite'));
+      expect(serveur.monRole).toBe('membre');
+      expect(evenements.notifier).not.toHaveBeenCalled();
     });
   });
 
@@ -869,6 +888,7 @@ describe('ServersService', () => {
       prisma.server.findUnique.mockResolvedValue(
         makeServeur({ members: [membre('owner'), membre('invite')] }),
       );
+      prisma.serverInvitation.deleteMany.mockResolvedValue({ count: 1 });
       await service.accepterInvitation('srv-1', u('invite'));
       await service.refuserInvitation('srv-1', u('invite'));
       expect(evenements.notifier.mock.calls).toEqual([

@@ -153,6 +153,12 @@ describe('EvenementsService', () => {
     expect(erreur).not.toHaveBeenCalled();
   });
 
+  it('purge : ne fait rien sans INTERNAL_SERVICE_TOKEN', async () => {
+    delete process.env.INTERNAL_SERVICE_TOKEN;
+    await service.purgerSalons(['r1'], [0, 0]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('salonsSupprimes ne bloque pas et ne renvoie rien', () => {
     const purger = jest.spyOn(service, 'purgerSalons').mockResolvedValue();
     expect(service.salonsSupprimes(['r1'])).toBeUndefined();

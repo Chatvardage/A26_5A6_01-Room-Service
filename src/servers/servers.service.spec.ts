@@ -641,9 +641,33 @@ describe('ServersService', () => {
         service.inviter('srv-1', 'nouveau', u('modo')),
       ).rejects.toThrow(BadRequestException);
       expect(prisma.serverInvitation.create).not.toHaveBeenCalled();
+      // Refusée : personne n'est prévenu.
+      expect(evenements.notifier).not.toHaveBeenCalled();
       // Idempotence préservée même à la limite.
       await service.inviter('srv-1', 'invite-0', u('modo'));
       expect(prisma.serverInvitation.create).not.toHaveBeenCalled();
+    });
+
+    it('inviter : acceptée juste sous la limite (MAX_INVITATIONS_EN_ATTENTE - 1)', async () => {
+      const invitations = Array.from(
+        { length: MAX_INVITATIONS_EN_ATTENTE - 1 },
+        (_, i) => ({
+          serverId: 'srv-1',
+          userId: `invite-${i}`,
+          invitedBy: 'modo',
+          invitedAt: date,
+        }),
+      );
+      prisma.server.findUnique.mockResolvedValue(makeServeur({ invitations }));
+      await service.inviter('srv-1', 'nouveau', u('modo'));
+      expect(prisma.serverInvitation.create).toHaveBeenCalledWith({
+        data: { serverId: 'srv-1', userId: 'nouveau', invitedBy: 'modo' },
+      });
+      expect(evenements.notifier).toHaveBeenCalledWith(
+        'srv-1',
+        'invitation',
+        expect.objectContaining({ cibleId: 'nouveau' }),
+      );
     });
 
     it('un simple membre ne peut pas inviter', async () => {

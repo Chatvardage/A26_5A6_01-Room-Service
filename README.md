@@ -258,6 +258,12 @@ par lots de 500, 3 essais par lot). Un échec définitif est journalisé
 Un serveur compte au plus 200 salons : au-delà, `POST /api/servers/:id/channels`
 répond 400.
 
+Ces plafonds (serveurs possédés, salons, invitations en attente) sont des
+garde-fous contre l'abus, pas des contraintes en base : la vérification et
+la création ne sont pas dans une même transaction, donc deux requêtes
+simultanées à la limite peuvent la dépasser d'une unité. Limite connue et
+acceptée.
+
 | Action | `raison` | Destinataires |
 |---|---|---|
 | Modifier le serveur | `modifie` | membres |

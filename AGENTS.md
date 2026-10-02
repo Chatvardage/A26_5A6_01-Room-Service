@@ -108,11 +108,11 @@ npm ci
 Puis exécuter au minimum :
 
 ```bash
+npm audit --audit-level=high
 npm run lint
 npm test
 npm run test:e2e
 npm run build
-npm audit --audit-level=high
 ```
 
 **Audit des dépendances** : le CI lance `npm audit --audit-level=high` (dépendances de dev comprises). Si un avis `high` ou `critical` sans correctif compatible le bloque, forcer une version corrigée par un `overrides` ciblé dans `package.json` si elle existe ; sinon consigner l'exception dans une section « Limites connues » du README, à créer au besoin (paquet, avis, raison, condition de retrait). Ne pas retirer ni affaiblir l'étape.
@@ -226,7 +226,7 @@ Dans la description de PR, résumer les changements, indiquer les tests exécut�
 - `npm run test:cov` doit terminer avec 100 % Statements, Branches, Functions et Lines.
 - Le seuil Jest global est fixé à 100 % : toute baisse fait échouer la commande.
 - Toute nouvelle branche de logique doit être accompagnée de tests couvrant succès, refus et erreurs.
-- Avant une PR : `npm run lint`, `npm test`, `npm run test:cov`, `npm run test:e2e`, `npm run build`, `npm audit --audit-level=high`.
+- Avant une PR : `npm audit --audit-level=high`, `npm run lint`, `npm test`, `npm run test:cov`, `npm run test:e2e`, `npm run build`.
 
 ## Documentation centrale
 

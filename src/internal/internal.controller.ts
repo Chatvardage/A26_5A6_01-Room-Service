@@ -14,14 +14,13 @@ import {
 } from '@nestjs/swagger';
 import { IsIn, IsOptional } from 'class-validator';
 import { PublicRoute } from '../auth/auth.guard';
+import { ROLES_GLOBAUX, type RoleGlobal } from '../partage/client-auth';
 import { ChannelsService } from '../servers/channels.service';
 import { ServersService } from '../servers/servers.service';
 import {
   EN_TETE_JETON_INTERNE,
   InternalTokenGuard,
 } from './internal-token.guard';
-
-const ROLES_GLOBAUX = ['admin', 'moderateur', 'utilisateur'] as const;
 
 export class AccesQueryDto {
   @ApiPropertyOptional({
@@ -32,7 +31,7 @@ export class AccesQueryDto {
   })
   @IsOptional()
   @IsIn(ROLES_GLOBAUX)
-  role?: (typeof ROLES_GLOBAUX)[number];
+  role?: RoleGlobal;
 }
 
 @ApiTags('Interne')

@@ -21,7 +21,7 @@ describe('AuthService', () => {
       id: 'u1',
       pseudo: 'alice',
       courriel: 'alice@example.com',
-      role: 'moderateur',
+      role: 'utilisateur',
     };
     global.fetch = jest
       .fn()

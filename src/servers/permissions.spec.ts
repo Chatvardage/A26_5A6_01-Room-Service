@@ -35,19 +35,6 @@ describe('permissions', () => {
       );
     });
 
-    it('le modérateur GLOBAL ne donne aucun droit particulier', () => {
-      expect(
-        roleEffectif(
-          serveur,
-          { role: 'membre' },
-          { id: 'm', role: 'moderateur' },
-        ),
-      ).toBe('membre');
-      expect(roleEffectif(serveur, null, { id: 'm', role: 'moderateur' })).toBe(
-        null,
-      );
-    });
-
     it('tout le monde est membre du serveur par défaut, même sans ligne', () => {
       expect(roleEffectif(parDefaut, null, utilisateur('n'))).toBe('membre');
     });

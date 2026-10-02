@@ -11,8 +11,8 @@ import type { AuthenticatedUser } from '../auth/auth.service';
  * - `proprietaire` : `Server.ownerId`.
  * - `moderateur` / `membre` : `ServerMember.role`.
  *
- * Le rôle global `moderateur` d'Authentification n'accorde AUCUN droit
- * particulier ici : la modération est propre à chaque serveur.
+ * Il n'y a pas de modérateur global : la modération est propre à chaque
+ * serveur.
  */
 export type RoleServeur = 'admin' | 'proprietaire' | ServerRole;
 

@@ -7,40 +7,81 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum RoomVisibility {
-  public
-  prive
+// Rôle d'un membre DANS un serveur. Le propriétaire n'est pas un rôle :
+// c'est `Server.ownerId` (voir src/servers/permissions.ts).
+enum ServerRole {
+  membre
+  moderateur
 }
 
-model Room {
-  id          String          @id @default(uuid())
+// Qui voit un salon : tous les membres du serveur, ou seulement ses
+// modérateurs (et le propriétaire / les admins globaux).
+enum ChannelAccess {
+  tous
+  moderateurs
+}
+
+// Qui peut écrire dans un salon visible (ex. #annonces : moderateurs).
+enum ChannelWrite {
+  tous
+  moderateurs
+}
+
+model Server {
+  id          String             @id @default(uuid())
   name        String
-  visibility  RoomVisibility  @default(public)
-  ownerId     String
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  members     RoomMember[]
-  invitations RoomInvitation[]
+  // Image en data URL (même format que l'avatar de User-Config-Service).
+  icon        String?
+  // null uniquement pour le serveur par défaut « Chatvardage », géré par
+  // les administrateurs globaux (voir src/servers/default-server.ts).
+  ownerId     String?
+  isPublic    Boolean            @default(false)
+  isDefault   Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  members     ServerMember[]
+  invitations ServerInvitation[]
+  channels    Room[]
 
   @@index([ownerId])
+  @@index([isPublic])
 }
 
-model RoomMember {
-  roomId   String
+model ServerMember {
+  serverId String
   userId   String
-  joinedAt DateTime @default(now())
-  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  role     ServerRole @default(membre)
+  joinedAt DateTime   @default(now())
+  server   Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
-  @@id([roomId, userId])
+  @@id([serverId, userId])
   @@index([userId])
 }
 
-model RoomInvitation {
-  roomId    String
+model ServerInvitation {
+  serverId  String
   userId    String
+  invitedBy String
   invitedAt DateTime @default(now())
-  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
-  @@id([roomId, userId])
+  @@id([serverId, userId])
   @@index([userId])
+}
+
+// Un salon d'un serveur. Le nom de modèle `Room` est conservé : les
+// messages de Message-Service référencent ces identifiants (`roomId`).
+model Room {
+  id          String        @id @default(uuid())
+  serverId    String
+  name        String
+  position    Int           @default(0)
+  access      ChannelAccess @default(tous)
+  writePolicy ChannelWrite  @default(tous)
+  createdBy   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  server      Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId, position])
 }

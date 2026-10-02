@@ -1,0 +1,179 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type { AuthenticatedUser } from '../auth/auth.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateChannelDto, UpdateChannelDto } from './dto/channel.dto';
+import { EvenementsService } from './evenements.service';
+import {
+  Acteur,
+  RoleServeur,
+  peutEcrireSalon,
+  peutModerer,
+  peutVoirSalon,
+  roleEffectif,
+} from './permissions';
+import { ServersService } from './servers.service';
+import {
+  AccesSalonResponse,
+  SalonResponse,
+} from './types/server-response.type';
+
+// Salons d'un même serveur (même raison que MAX_SERVEURS_POSSEDES).
+export const MAX_SALONS_PAR_SERVEUR = 200;
+
+@Injectable()
+export class ChannelsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly servers: ServersService,
+    private readonly evenements: EvenementsService,
+  ) {}
+
+  /** Créer un salon : modérateur du serveur minimum. */
+  async creer(
+    serveurId: string,
+    dto: CreateChannelDto,
+    acteur: Acteur,
+  ): Promise<SalonResponse> {
+    const { serveur, role } = await this.servers.contexteVisible(
+      serveurId,
+      acteur,
+    );
+    this.servers.exiger(
+      peutModerer(role),
+      'Action réservée aux modérateurs du serveur',
+    );
+
+    if (serveur.channels.length >= MAX_SALONS_PAR_SERVEUR) {
+      throw new BadRequestException(
+        `Limite atteinte : ${MAX_SALONS_PAR_SERVEUR} salons par serveur`,
+      );
+    }
+
+    // Nouveau salon en fin de liste.
+    const position =
+      serveur.channels.reduce(
+        (max, salon) => Math.max(max, salon.position),
+        -1,
+      ) + 1;
+    const salon = await this.prisma.room.create({
+      data: {
+        serverId: serveurId,
+        name: dto.nom,
+        position,
+        access: dto.acces ?? 'tous',
+        writePolicy: dto.ecriture ?? 'tous',
+        createdBy: acteur.id,
+      },
+    });
+    this.evenements.notifier(serveurId, 'salons', {
+      destinataires: serveur.members.map((membre) => membre.userId),
+    });
+    return this.servers.versSalon(salon, role);
+  }
+
+  async modifier(
+    salonId: string,
+    dto: UpdateChannelDto,
+    acteur: Acteur,
+  ): Promise<SalonResponse> {
+    const { role } = await this.contexteModeration(salonId, acteur);
+    if (
+      dto.nom === undefined &&
+      dto.acces === undefined &&
+      dto.ecriture === undefined &&
+      dto.position === undefined
+    ) {
+      throw new BadRequestException('Aucune modification fournie');
+    }
+
+    const salon = await this.prisma.room.update({
+      where: { id: salonId },
+      data: {
+        ...(dto.nom !== undefined ? { name: dto.nom } : {}),
+        ...(dto.acces !== undefined ? { access: dto.acces } : {}),
+        ...(dto.ecriture !== undefined ? { writePolicy: dto.ecriture } : {}),
+        ...(dto.position !== undefined ? { position: dto.position } : {}),
+      },
+    });
+    // Salon rendu réservé aux modérateurs : les membres le perdent aussitôt.
+    this.evenements.notifier(salon.serverId, 'salons');
+    return this.servers.versSalon(salon, role);
+  }
+
+  /** Supprimer un salon ; un serveur garde toujours au moins un salon. */
+  async supprimer(salonId: string, acteur: Acteur): Promise<void> {
+    const { salon } = await this.contexteModeration(salonId, acteur);
+    const nombre = await this.prisma.room.count({
+      where: { serverId: salon.serverId },
+    });
+    if (nombre <= 1) {
+      throw new BadRequestException('Un serveur doit garder au moins un salon');
+    }
+    await this.prisma.room.delete({ where: { id: salonId } });
+    this.evenements.notifier(salon.serverId, 'salons');
+    this.evenements.salonsSupprimes([salonId]);
+  }
+
+  /**
+   * Accès d'un utilisateur à un salon, pour Message-Service (route
+   * interne). `roleGlobal` vient du JWT déjà validé par Message-Service.
+   */
+  async acces(
+    salonId: string,
+    utilisateurId: string,
+    roleGlobal: AuthenticatedUser['role'],
+  ): Promise<AccesSalonResponse> {
+    const salon = await this.chargerSalon(salonId, utilisateurId);
+    const membre = salon.server.members[0];
+    const role = roleEffectif(salon.server, membre, {
+      id: utilisateurId,
+      role: roleGlobal,
+    });
+    return {
+      salonId: salon.id,
+      serveurId: salon.serverId,
+      estMembre: membre !== undefined || salon.server.isDefault,
+      peutLire: peutVoirSalon(role, salon),
+      peutEcrire: peutEcrireSalon(role, salon),
+      // Supprimer les messages des autres dans ce salon.
+      peutModerer: peutModerer(role),
+    };
+  }
+
+  // --- Outils -------------------------------------------------------------------
+
+  private async chargerSalon(salonId: string, utilisateurId: string) {
+    const salon = await this.prisma.room.findUnique({
+      where: { id: salonId },
+      include: {
+        server: { include: { members: { where: { userId: utilisateurId } } } },
+      },
+    });
+    if (!salon) {
+      throw new NotFoundException(`Salon ${salonId} non trouvé`);
+    }
+    return salon;
+  }
+
+  /** Salon visible par l'appelant ET appelant modérateur, sinon 404 / 403. */
+  private async contexteModeration(salonId: string, acteur: Acteur) {
+    const salon = await this.chargerSalon(salonId, acteur.id);
+    const role: RoleServeur | null = roleEffectif(
+      salon.server,
+      salon.server.members[0],
+      acteur,
+    );
+    if (!peutVoirSalon(role, salon)) {
+      throw new NotFoundException(`Salon ${salonId} non trouvé`);
+    }
+    this.servers.exiger(
+      peutModerer(role),
+      'Action réservée aux modérateurs du serveur',
+    );
+    return { salon, role };
+  }
+}

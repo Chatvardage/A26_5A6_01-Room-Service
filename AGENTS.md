@@ -4,7 +4,7 @@ Ce fichier contient les règles de travail pour tout agent IA ou développeur qu
 
 ## Contexte du projet
 
-Ce dépôt est le **Room-Service** de Chatvardage pour le Contrôle 2 du cours `420-5A6-ST – A26`.
+Ce dépôt est le **Room-Service** de Chatvardage.
 
 Architecture d'équipe :
 
@@ -187,7 +187,7 @@ curl http://localhost:3003/api/health
 
 Le `compose.local.yml` sert au développement autonome. L'environnement final est orchestré par le dépôt `Infra`.
 
-Ne pas ajouter Redis au Room-Service uniquement parce que Redis est exigé au Contrôle 2 : Redis/WebSocket appartient au flux temps réel des messages privés dans `Message-Service`.
+Ne pas ajouter Redis au Room-Service : Redis/WebSocket appartient au flux temps réel des messages privés dans `Message-Service`.
 
 ## Documentation
 
@@ -224,6 +224,6 @@ Dans la description de PR, résumer les changements, indiquer les tests exécut�
 - Toute nouvelle branche de logique doit être accompagnée de tests couvrant succès, refus et erreurs.
 - Avant une PR : `npm run lint`, `npm test`, `npm run test:cov`, `npm run test:e2e`, `npm run build`.
 
-## Documentation centrale du contrôle 2
+## Documentation centrale
 
-Infra est la référence du démarrage complet, des architectures, contrats et scénarios de remise. Le README local décrit le dépôt et ses commandes; les guides détaillés sont dans `A26_5A6_01-Infra/docs/`. Toute modification de contrat doit mettre à jour la référence centrale et ses liens. Mobile relève du contrôle 3.
+Infra est la référence du démarrage complet, des architectures, contrats et scénarios de validation. Le README local décrit le dépôt et ses commandes; les guides détaillés sont dans `A26_5A6_01-Infra/docs/`. Toute modification de contrat doit mettre à jour la référence centrale et ses liens.

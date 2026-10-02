@@ -223,3 +223,7 @@ Dans la description de PR, résumer les changements, indiquer les tests exécut�
 - Le seuil Jest global est fixé à 100 % : toute baisse fait échouer la commande.
 - Toute nouvelle branche de logique doit être accompagnée de tests couvrant succès, refus et erreurs.
 - Avant une PR : `npm run lint`, `npm test`, `npm run test:cov`, `npm run test:e2e`, `npm run build`.
+
+## Documentation centrale du contrôle 2
+
+Infra est la référence du démarrage complet, des architectures, contrats et scénarios de remise. Le README local décrit le dépôt et ses commandes; les guides détaillés sont dans `A26_5A6_01-Infra/docs/`. Toute modification de contrat doit mettre à jour la référence centrale et ses liens. Mobile relève du contrôle 3.

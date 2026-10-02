@@ -95,7 +95,7 @@ async function bootstrap() {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Chatvardage Rooms Service')
     .setDescription('API de gestion des salons de Chatvardage')
-    .setVersion('2.0.0')
+    .setVersion('1.0.0')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
     .build();
 

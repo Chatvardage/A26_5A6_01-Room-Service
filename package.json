@@ -1,6 +1,6 @@
 {
   "name": "a26-5a6-01-chatvardage-rooms-service",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Rooms microservice for Chatvardage - Contrôle 2",
   "private": true,
   "license": "UNLICENSED",

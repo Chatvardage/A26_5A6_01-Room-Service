@@ -231,3 +231,12 @@ Dans la description de PR, résumer les changements, indiquer les tests exécut�
 ## Documentation centrale
 
 Infra est la référence du démarrage complet, des architectures, contrats et scénarios de validation. Le README local décrit le dépôt et ses commandes; les guides détaillés sont dans `A26_5A6_01-Infra/docs/`. Toute modification de contrat doit mettre à jour la référence centrale et ses liens.
+
+## Revue PR #9 — décisions du 6 octobre 2026
+
+- Liste admin non bornée : pas de take arbitraire; le contrat exige tous les salons lisibles pour les compteurs et la recherche. Tronquer silencieusement à 5 000 ferait disparaître des salons autorisés. Une pagination coordonnée avec Message-Service pourra être ajoutée si les volumes la justifient.
+- Propriétaire sans ServerMember après modification manuelle de la base : pas d'assertion; la création normale insère le membre. La date inconnue conserve le contrat depuis: null et évite d'inventer une date de lecture. Réparer les données incohérentes à leur source.
+- Décorateur ApiResponse : reporté; aucune modification du contrat, le type est déjà explicite dans le code. Amélioration Swagger facultative.
+- E2E dédié à la nouvelle route : reporté dans ce correctif limité aux bugs; le contrôleur délègue au service couvert et le garde de classe est déjà couvert en E2E sur les routes internes. Ajouter un scénario HTTP complet lors d'une évolution du contrat ou des permissions.
+
+Validation : audit high, lint, 198 tests unitaires (couverture 100 %), 14 tests E2E et build passent. Aucun changement de code Room-Service.

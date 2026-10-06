@@ -82,3 +82,13 @@ export interface AccesSalonResponse {
    * messages des autres dans ce salon. */
   peutModerer: boolean;
 }
+
+/** Un salon lisible par un utilisateur, pour Message-Service (route interne). */
+export interface SalonLisibleResponse {
+  salonId: string;
+  serveurId: string;
+  /** Arrivée de l'utilisateur dans le serveur (ISO 8601) ; `null` sans
+   * ligne de membre (admin global non membre, serveur par défaut pas encore
+   * rejoint). Message-Service ne compte les non-lus qu'à partir de là. */
+  depuis: string | null;
+}

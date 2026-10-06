@@ -39,7 +39,7 @@ Le service doit conserver la responsabilité de :
 - gérer les membres d'un serveur, leurs rôles (propriétaire, modérateur, membre) et les invitations;
 - gérer le serveur par défaut « Chatvardage » (tout le monde en est membre, impossible à quitter);
 - appliquer les permissions selon le rôle de l'appelant DANS le serveur (seul l'`admin` global d'Authentification a des droits partout);
-- exposer à Message-Service, par une route interne protégée par jeton, l'accès d'un utilisateur à un salon;
+- exposer à Message-Service, par des routes internes protégées par jeton, l'accès d'un utilisateur à un salon et la liste des salons qu'il peut lire (avec sa date d'arrivée dans chaque serveur, pour les messages non lus et la recherche);
 - persister serveurs, membres, invitations et salons dans PostgreSQL;
 - exposer un healthcheck pour le service et PostgreSQL.
 
@@ -231,3 +231,12 @@ Dans la description de PR, résumer les changements, indiquer les tests exécut�
 ## Documentation centrale
 
 Infra est la référence du démarrage complet, des architectures, contrats et scénarios de validation. Le README local décrit le dépôt et ses commandes; les guides détaillés sont dans `A26_5A6_01-Infra/docs/`. Toute modification de contrat doit mettre à jour la référence centrale et ses liens.
+
+## Revue PR #9 — décisions du 6 octobre 2026
+
+- Liste admin non bornée : pas de take arbitraire; le contrat exige tous les salons lisibles pour les compteurs et la recherche. Tronquer silencieusement à 5 000 ferait disparaître des salons autorisés. Une pagination coordonnée avec Message-Service pourra être ajoutée si les volumes la justifient.
+- Propriétaire sans ServerMember après modification manuelle de la base : pas d'assertion; la création normale insère le membre. La date inconnue conserve le contrat depuis: null et évite d'inventer une date de lecture. Réparer les données incohérentes à leur source.
+- Décorateur ApiResponse : reporté; aucune modification du contrat, le type est déjà explicite dans le code. Amélioration Swagger facultative.
+- E2E dédié à la nouvelle route : reporté dans ce correctif limité aux bugs; le contrôleur délègue au service couvert et le garde de classe est déjà couvert en E2E sur les routes internes. Ajouter un scénario HTTP complet lors d'une évolution du contrat ou des permissions.
+
+Validation : audit high, lint, 198 tests unitaires (couverture 100 %), 14 tests E2E et build passent. Aucun changement de code Room-Service.

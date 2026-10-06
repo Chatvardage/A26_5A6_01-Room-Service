@@ -18,6 +18,7 @@ import {
 import { ServersService } from './servers.service';
 import {
   AccesSalonResponse,
+  SalonLisibleResponse,
   SalonResponse,
 } from './types/server-response.type';
 
@@ -142,6 +143,57 @@ export class ChannelsService {
       // Supprimer les messages des autres dans ce salon.
       peutModerer: peutModerer(role),
     };
+  }
+
+  /**
+   * Tous les salons qu'un utilisateur peut lire, pour Message-Service
+   * (recherche et messages non lus, route interne). Mêmes règles que
+   * `acces()` : un admin global lit tous les salons.
+   */
+  async salonsLisibles(
+    utilisateurId: string,
+    roleGlobal: AuthenticatedUser['role'],
+  ): Promise<SalonLisibleResponse[]> {
+    const serveurs = await this.prisma.server.findMany({
+      where:
+        roleGlobal === 'admin'
+          ? {}
+          : {
+              OR: [
+                { members: { some: { userId: utilisateurId } } },
+                { ownerId: utilisateurId },
+                { isDefault: true },
+              ],
+            },
+      select: {
+        id: true,
+        ownerId: true,
+        isDefault: true,
+        members: {
+          where: { userId: utilisateurId },
+          select: { role: true, joinedAt: true },
+        },
+        channels: {
+          select: { id: true, access: true },
+          orderBy: { position: 'asc' },
+        },
+      },
+    });
+
+    return serveurs.flatMap((serveur) => {
+      const membre = serveur.members[0];
+      const role = roleEffectif(serveur, membre, {
+        id: utilisateurId,
+        role: roleGlobal,
+      });
+      return serveur.channels
+        .filter((salon) => peutVoirSalon(role, salon))
+        .map((salon) => ({
+          salonId: salon.id,
+          serveurId: serveur.id,
+          depuis: membre ? membre.joinedAt.toISOString() : null,
+        }));
+    });
   }
 
   // --- Outils -------------------------------------------------------------------

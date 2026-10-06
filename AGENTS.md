@@ -39,7 +39,7 @@ Le service doit conserver la responsabilité de :
 - gérer les membres d'un serveur, leurs rôles (propriétaire, modérateur, membre) et les invitations;
 - gérer le serveur par défaut « Chatvardage » (tout le monde en est membre, impossible à quitter);
 - appliquer les permissions selon le rôle de l'appelant DANS le serveur (seul l'`admin` global d'Authentification a des droits partout);
-- exposer à Message-Service, par une route interne protégée par jeton, l'accès d'un utilisateur à un salon;
+- exposer à Message-Service, par des routes internes protégées par jeton, l'accès d'un utilisateur à un salon et la liste des salons qu'il peut lire (avec sa date d'arrivée dans chaque serveur, pour les messages non lus et la recherche);
 - persister serveurs, membres, invitations et salons dans PostgreSQL;
 - exposer un healthcheck pour le service et PostgreSQL.
 

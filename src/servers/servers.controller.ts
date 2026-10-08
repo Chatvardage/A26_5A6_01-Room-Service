@@ -55,7 +55,10 @@ export class ServersController {
     @Query() query: DiscoverServersQueryDto,
     @Req() request: AuthenticatedRequest,
   ) {
-    return this.servers.decouvrir(requireUser(request), query.q);
+    return this.servers.decouvrir(requireUser(request), query.q, {
+      decalage: query.decalage,
+      limite: query.limite,
+    });
   }
 
   @Get('invitations/me')

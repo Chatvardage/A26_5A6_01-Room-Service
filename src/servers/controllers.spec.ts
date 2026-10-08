@@ -53,7 +53,15 @@ describe('contrôleurs', () => {
     await c.lister(req);
     expect(servers.listerMesServeurs).toHaveBeenCalledWith(user);
     await c.decouvrir({ q: 'pro' }, req);
-    expect(servers.decouvrir).toHaveBeenCalledWith(user, 'pro');
+    expect(servers.decouvrir).toHaveBeenCalledWith(user, 'pro', {
+      decalage: undefined,
+      limite: undefined,
+    });
+    await c.decouvrir({ q: '', decalage: 20, limite: 10 }, req);
+    expect(servers.decouvrir).toHaveBeenLastCalledWith(user, '', {
+      decalage: 20,
+      limite: 10,
+    });
     await c.mesInvitations(req);
     await c.creer({ nom: 'x' }, req);
     expect(servers.creer).toHaveBeenCalledWith({ nom: 'x' }, user);

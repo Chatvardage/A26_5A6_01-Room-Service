@@ -9,7 +9,10 @@ import { Prisma, ServerRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateServerDto, UpdateServerDto } from './dto/create-server.dto';
 import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
-import { LIMITE_MEMBRES_DEFAUT } from './dto/member.dto';
+import {
+  LIMITE_DECOUVERTE_DEFAUT,
+  LIMITE_MEMBRES_DEFAUT,
+} from './dto/member.dto';
 import { EvenementsService } from './evenements.service';
 import {
   Acteur,
@@ -30,8 +33,6 @@ import {
   ServeurResumeResponse,
 } from './types/server-response.type';
 
-// Nombre maximal de serveurs publics renvoyés par la recherche.
-const LIMITE_DECOUVERTE = 20;
 // Serveurs qu'un même compte peut posséder : sans plafond, un script pouvait
 // en créer indéfiniment (chacun avec son salon).
 export const MAX_SERVEURS_POSSEDES = 100;
@@ -106,24 +107,38 @@ export class ServersService {
     );
   }
 
-  /** Serveurs publics dont l'appelant n'est pas encore membre. */
+  /** Serveurs publics dont l'appelant n'est pas encore membre, par pages. */
   async decouvrir(
     acteur: Acteur,
     recherche?: string,
-  ): Promise<ServeurResumeResponse[]> {
-    const serveurs = await this.prisma.server.findMany({
-      where: {
-        isPublic: true,
-        members: { none: { userId: acteur.id } },
-        ...(recherche
-          ? { name: { contains: recherche, mode: 'insensitive' as const } }
-          : {}),
-      },
-      include: { _count: { select: { members: true } } },
-      orderBy: { name: 'asc' },
-      take: LIMITE_DECOUVERTE,
-    });
-    return serveurs.map((serveur) => this.versResume(serveur));
+    options: { decalage?: number; limite?: number } = {},
+  ): Promise<PageServeursResponse> {
+    const decalage = options.decalage ?? 0;
+    const limite = options.limite ?? LIMITE_DECOUVERTE_DEFAUT;
+    const where = {
+      isPublic: true,
+      members: { none: { userId: acteur.id } },
+      ...(recherche
+        ? { name: { contains: recherche, mode: 'insensitive' as const } }
+        : {}),
+    };
+    const [total, serveurs] = await Promise.all([
+      this.prisma.server.count({ where }),
+      this.prisma.server.findMany({
+        where,
+        include: { _count: { select: { members: true } } },
+        // L'id départage les noms égaux : les pages ne se chevauchent pas.
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        skip: decalage,
+        take: limite,
+      }),
+    ]);
+    const fin = decalage + serveurs.length;
+    return {
+      serveurs: serveurs.map((serveur) => this.versResume(serveur)),
+      total,
+      suivant: fin < total ? fin : null,
+    };
   }
 
   /**

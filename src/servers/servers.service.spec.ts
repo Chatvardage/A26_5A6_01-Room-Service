@@ -222,35 +222,62 @@ describe('ServersService', () => {
       );
     });
 
-    it('decouvrir filtre les serveurs publics non rejoints, par nom', async () => {
+    it('decouvrir filtre les serveurs publics non rejoints, par nom, par pages', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(3);
       prisma.server.findMany.mockResolvedValue([
         { ...makeServeur({ isPublic: true }), _count: { members: 3 } },
       ]);
-      await expect(service.decouvrir(u('bob'), 'pro')).resolves.toEqual([
-        {
-          type: 'serveur',
-          id: 'srv-1',
-          nom: 'Projet',
-          icone: null,
-          public: true,
-          nombreMembres: 3,
-        },
-      ]);
+      await expect(service.decouvrir(u('bob'), 'pro')).resolves.toEqual({
+        serveurs: [
+          {
+            type: 'serveur',
+            id: 'srv-1',
+            nom: 'Projet',
+            icone: null,
+            public: true,
+            nombreMembres: 3,
+          },
+        ],
+        total: 3,
+        suivant: 1,
+      });
+      const where = {
+        isPublic: true,
+        members: { none: { userId: 'bob' } },
+        name: { contains: 'pro', mode: 'insensitive' },
+      };
+      expect(prisma.server.count).toHaveBeenCalledWith({ where });
       expect(prisma.server.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {
-            isPublic: true,
-            members: { none: { userId: 'bob' } },
-            name: { contains: 'pro', mode: 'insensitive' },
-          },
+          where,
+          orderBy: [{ name: 'asc' }, { id: 'asc' }],
+          skip: 0,
           take: 20,
         }),
       );
     });
 
+    it('decouvrir : page suivante et dernière page', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(3);
+      prisma.server.findMany.mockResolvedValue([
+        { ...makeServeur({ isPublic: true }), _count: { members: 1 } },
+      ]);
+      await expect(
+        service.decouvrir(u('bob'), undefined, { decalage: 2, limite: 2 }),
+      ).resolves.toMatchObject({ total: 3, suivant: null });
+      expect(prisma.server.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 2, take: 2 }),
+      );
+    });
+
     it('decouvrir sans texte ne filtre pas sur le nom', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(0);
       prisma.server.findMany.mockResolvedValue([]);
-      await service.decouvrir(u('bob'));
+      await expect(service.decouvrir(u('bob'))).resolves.toEqual({
+        serveurs: [],
+        total: 0,
+        suivant: null,
+      });
       expect(prisma.server.findMany.mock.calls[0][0].where).toEqual({
         isPublic: true,
         members: { none: { userId: 'bob' } },

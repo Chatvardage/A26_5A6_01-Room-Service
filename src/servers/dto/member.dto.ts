@@ -16,6 +16,8 @@ import {
 /** Taille de page par défaut et maximale de la liste des membres. */
 export const LIMITE_MEMBRES_DEFAUT = 50;
 export const LIMITE_MEMBRES_MAX = 100;
+/** Taille de page par défaut de la découverte des serveurs publics. */
+export const LIMITE_DECOUVERTE_DEFAUT = 20;
 
 export class InviteMemberDto {
   @ApiProperty({ example: 'user-2' })
@@ -32,6 +34,24 @@ export class UpdateMemberRoleDto {
 }
 
 export class DiscoverServersQueryDto {
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsInt()
+  @Min(0)
+  decalage?: number;
+
+  @ApiPropertyOptional({
+    default: LIMITE_DECOUVERTE_DEFAUT,
+    maximum: LIMITE_MEMBRES_MAX,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(LIMITE_MEMBRES_MAX)
+  limite?: number;
+
   @ApiPropertyOptional({
     example: 'projet',
     description: 'Filtre sur le nom (contient, insensible à la casse).',

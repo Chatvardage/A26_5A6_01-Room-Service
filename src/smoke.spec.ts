@@ -92,6 +92,12 @@ describe('modules et DTO', () => {
       'pro',
     );
     expect(await erreurs(DiscoverServersQueryDto, { q: 5 })).toEqual(['q']);
+    expect(
+      await erreurs(DiscoverServersQueryDto, { decalage: '20', limite: '20' }),
+    ).toEqual([]);
+    expect(
+      await erreurs(DiscoverServersQueryDto, { decalage: '-1', limite: '101' }),
+    ).toEqual(['decalage', 'limite']);
     expect(await erreurs(AccesQueryDto, { role: 'admin' })).toEqual([]);
     expect(await erreurs(AccesQueryDto, { role: 'root' })).toEqual(['role']);
   });

@@ -250,9 +250,13 @@ describe('ServersService', () => {
       expect(prisma.server.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where,
-          orderBy: [{ name: 'asc' }, { id: 'asc' }],
+          orderBy: [
+            { members: { _count: 'desc' } },
+            { name: 'asc' },
+            { id: 'asc' },
+          ],
           skip: 0,
-          take: 20,
+          take: 10,
         }),
       );
     });

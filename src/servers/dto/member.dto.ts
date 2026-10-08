@@ -17,7 +17,7 @@ import {
 export const LIMITE_MEMBRES_DEFAUT = 50;
 export const LIMITE_MEMBRES_MAX = 100;
 /** Taille de page par défaut de la découverte des serveurs publics. */
-export const LIMITE_DECOUVERTE_DEFAUT = 20;
+export const LIMITE_DECOUVERTE_DEFAUT = 10;
 
 export class InviteMemberDto {
   @ApiProperty({ example: 'user-2' })

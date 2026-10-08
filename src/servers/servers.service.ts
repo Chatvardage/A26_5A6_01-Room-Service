@@ -127,8 +127,13 @@ export class ServersService {
       this.prisma.server.findMany({
         where,
         include: { _count: { select: { members: true } } },
-        // L'id départage les noms égaux : les pages ne se chevauchent pas.
-        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        // Les plus fréquentés d'abord ; le nom puis l'id départagent les
+        // égalités, pour que les pages ne se chevauchent pas.
+        orderBy: [
+          { members: { _count: 'desc' } },
+          { name: 'asc' },
+          { id: 'asc' },
+        ],
         skip: decalage,
         take: limite,
       }),

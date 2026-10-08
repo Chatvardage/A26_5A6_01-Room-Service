@@ -9,6 +9,7 @@ import {
 } from './servers/dto/create-server.dto';
 import {
   DiscoverServersQueryDto,
+  KickMemberQueryDto,
   InviteMemberDto,
   UpdateMemberRoleDto,
 } from './servers/dto/member.dto';
@@ -98,6 +99,13 @@ describe('modules et DTO', () => {
     expect(
       await erreurs(DiscoverServersQueryDto, { decalage: '-1', limite: '101' }),
     ).toEqual(['decalage', 'limite']);
+    expect(await erreurs(KickMemberQueryDto, {})).toEqual([]);
+    expect(
+      await erreurs(KickMemberQueryDto, { nouveauProprietaire: 'bob' }),
+    ).toEqual([]);
+    expect(
+      await erreurs(KickMemberQueryDto, { nouveauProprietaire: '' }),
+    ).toEqual(['nouveauProprietaire']);
     expect(await erreurs(AccesQueryDto, { role: 'admin' })).toEqual([]);
     expect(await erreurs(AccesQueryDto, { role: 'root' })).toEqual(['role']);
   });

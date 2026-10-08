@@ -595,6 +595,47 @@ describe('ServersService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it('un admin expulse le propriétaire en transférant la propriété', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ members: [membre('owner'), membre('bob')] }),
+      );
+      await service.expulser('srv-1', 'owner', admin, 'bob');
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.server.update).toHaveBeenCalledWith({
+        where: { id: 'srv-1' },
+        data: { ownerId: 'bob' },
+      });
+      expect(prisma.serverMember.delete).toHaveBeenCalledWith({
+        where: { serverId_userId: { serverId: 'srv-1', userId: 'owner' } },
+      });
+      expect(evenements.notifier).toHaveBeenCalledWith(
+        'srv-1',
+        'expulse',
+        expect.objectContaining({ cibleId: 'owner' }),
+      );
+    });
+
+    it('expulser le propriétaire exige un autre membre comme successeur', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ members: [membre('owner'), membre('bob')] }),
+      );
+      await expect(service.expulser('srv-1', 'owner', admin)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(
+        service.expulser('srv-1', 'owner', admin, 'owner'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.expulser('srv-1', 'owner', admin, 'inconnu'),
+      ).rejects.toThrow(NotFoundException);
+      prisma.server.count.mockResolvedValueOnce(MAX_SERVEURS_POSSEDES);
+      await expect(
+        service.expulser('srv-1', 'owner', admin, 'bob'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.server.update).not.toHaveBeenCalled();
+      expect(prisma.serverMember.delete).not.toHaveBeenCalled();
+    });
+
     it('un modérateur expulse un membre', async () => {
       prisma.server.findUnique.mockResolvedValue(makeServeur());
       await service.expulser('srv-1', 'bob', u('modo'));

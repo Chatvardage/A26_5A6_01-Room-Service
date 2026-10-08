@@ -396,13 +396,21 @@ export class ServersService {
   }
 
   /** Expulser : modérateur minimum, et strictement au-dessus de la cible. */
+  /**
+   * Expulser un membre : modérateur minimum, strictement au-dessus de lui.
+   * Le propriétaire ne peut donc être expulsé que par un administrateur, qui
+   * désigne alors un autre membre comme nouveau propriétaire : sans ça, le
+   * propriétaire gardait tous ses droits (`ownerId`) sans être membre.
+   */
   async expulser(
     id: string,
     utilisateurId: string,
     acteur: Acteur,
+    nouveauProprietaireId?: string,
   ): Promise<ServeurResponse> {
     const { serveur, role } = await this.contexteVisible(id, acteur, [
       utilisateurId,
+      ...(nouveauProprietaireId ? [nouveauProprietaireId] : []),
     ]);
     this.refuserSiParDefaut(
       serveur,
@@ -418,16 +426,56 @@ export class ServersService {
       'Rôle insuffisant pour expulser ce membre',
     );
 
-    await this.prisma.serverMember.delete({
-      where: { serverId_userId: { serverId: id, userId: utilisateurId } },
-    });
+    if (serveur.ownerId === utilisateurId) {
+      await this.transfererPuisExpulser(
+        serveur,
+        utilisateurId,
+        nouveauProprietaireId,
+      );
+    } else {
+      await this.prisma.serverMember.delete({
+        where: { serverId_userId: { serverId: id, userId: utilisateurId } },
+      });
+    }
     // L'expulsé fait partie des destinataires (membres d'avant l'expulsion) :
-    // son app ferme le serveur aussitôt.
+    // son app ferme le serveur aussitôt ; le nouveau propriétaire recharge
+    // le serveur et voit ses nouveaux droits.
     this.evenements.notifier(id, 'expulse', {
       destinataires: this.idsMembres(serveur),
       cibleId: utilisateurId,
     });
     return this.obtenir(id, acteur);
+  }
+
+  /** Propriétaire expulsé : la propriété passe à un autre membre, puis il part. */
+  private async transfererPuisExpulser(
+    serveur: ServeurComplet,
+    ancienId: string,
+    nouveauId: string | undefined,
+  ): Promise<void> {
+    if (!nouveauId || nouveauId === ancienId) {
+      throw new BadRequestException(
+        'Choisissez un autre membre comme nouveau propriétaire',
+      );
+    }
+    this.membreOuErreur(serveur, nouveauId);
+    const possedes = await this.prisma.server.count({
+      where: { ownerId: nouveauId },
+    });
+    if (possedes >= MAX_SERVEURS_POSSEDES) {
+      throw new BadRequestException(
+        `Limite atteinte : ce membre possède déjà ${MAX_SERVEURS_POSSEDES} serveurs`,
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.server.update({
+        where: { id: serveur.id },
+        data: { ownerId: nouveauId },
+      }),
+      this.prisma.serverMember.delete({
+        where: { serverId_userId: { serverId: serveur.id, userId: ancienId } },
+      }),
+    ]);
   }
 
   /** Nommer ou retirer un modérateur : propriétaire ou admin. */

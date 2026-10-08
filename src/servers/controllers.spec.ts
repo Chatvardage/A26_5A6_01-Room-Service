@@ -74,8 +74,20 @@ describe('contrôleurs', () => {
     await expect(c.supprimer('s', req)).resolves.toBeUndefined();
     await c.rejoindre('s', req);
     await expect(c.quitter('s', req)).resolves.toBeUndefined();
-    await c.expulser('s', 'alice', req);
-    expect(servers.expulser).toHaveBeenCalledWith('s', 'alice', user);
+    await c.expulser('s', 'alice', {}, req);
+    expect(servers.expulser).toHaveBeenCalledWith(
+      's',
+      'alice',
+      user,
+      undefined,
+    );
+    await c.expulser('s', 'owner', { nouveauProprietaire: 'bob' }, req);
+    expect(servers.expulser).toHaveBeenLastCalledWith(
+      's',
+      'owner',
+      user,
+      'bob',
+    );
     await c.changerRole('s', 'alice', { role: 'moderateur' }, req);
     expect(servers.changerRole).toHaveBeenCalledWith(
       's',

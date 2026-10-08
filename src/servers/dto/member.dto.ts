@@ -27,6 +27,16 @@ export class InviteMemberDto {
   utilisateurId!: string;
 }
 
+/** Expulsion du propriétaire : le membre qui devient propriétaire. */
+export class KickMemberQueryDto {
+  @ApiPropertyOptional({ example: 'user-2' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  nouveauProprietaire?: string;
+}
+
 export class UpdateMemberRoleDto {
   @ApiProperty({ enum: ['membre', 'moderateur'] })
   @IsIn(['membre', 'moderateur'])

@@ -240,3 +240,11 @@ Infra est la référence du démarrage complet, des architectures, contrats et s
 - E2E dédié à la nouvelle route : reporté dans ce correctif limité aux bugs; le contrôleur délègue au service couvert et le garde de classe est déjà couvert en E2E sur les routes internes. Ajouter un scénario HTTP complet lors d'une évolution du contrat ou des permissions.
 
 Validation : audit high, lint, 198 tests unitaires (couverture 100 %), 14 tests E2E et build passent. Aucun changement de code Room-Service.
+
+### Reprise sécurité — review 6078284218
+
+- Le démarrage utilise désormais le point d’entrée public node_modules/.bin/prisma, vérifié au build, et les paquets système disponibles sont mis à jour. Le JSDoc redondant et le lien non portable du rapport sont corrigés.
+- Prisma est déjà une dépendance de production : l’installation omit=dev conserve le CLI. Aucun ajout ni déplacement de dépendance n’est nécessaire.
+- La limite de découverte de 100 correspond à la borne métier existante; renommer la constante ou déplacer des imports n’apporte pas de correction fonctionnelle.
+- js-yaml 4.3.2 existe dans le registre et l’installation reproductible ainsi que l’audit passent. Le supprimer réintroduirait l’avis corrigé.
+- Les métadonnées libc concernent des dépendances optionnelles de compilation; elles ne changent pas les autorisations métier. La construction réelle Alpine vérifie leur compatibilité plutôt qu’une édition manuelle du verrou.

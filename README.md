@@ -58,4 +58,4 @@ Les migrations appartiennent à ce dépôt (`prisma/` lorsqu’applicable); Infr
 
 Une vérification Auth explicitement fraîche invalide aussi la requête en cours. Une réponse antérieure ne peut ni remplir à nouveau le cache ni effacer la nouvelle requête. Cette logique et ses tests sont identiques à Message-Service.
 
-Les dépendances compatibles sont mises à jour; l'override YAML concerne seulement `@istanbuljs/load-nyc-config`. npm/npx sont retirés de l'image finale : la migration utilise le CLI Prisma déjà installé (`node node_modules/prisma/build/index.js migrate deploy`). Voir le rapport global dans `../A26_5A6_01-Infra/docs/audit-securite-2026-10-09.md`.
+Les dépendances compatibles sont mises à jour; l'override YAML concerne seulement `@istanbuljs/load-nyc-config`. npm/npx sont retirés de l'image finale : la migration utilise le CLI Prisma déjà installé (`./node_modules/.bin/prisma migrate deploy`). Voir le rapport global dans [rapport initial Infra](https://github.com/Chatvardage/A26_5A6_01-Infra/blob/develop/docs/audit-securite-2026-10-09.md).

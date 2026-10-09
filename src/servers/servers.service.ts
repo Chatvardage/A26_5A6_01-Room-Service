@@ -400,7 +400,6 @@ export class ServersService {
     });
   }
 
-  /** Expulser : modérateur minimum, et strictement au-dessus de la cible. */
   /**
    * Expulser un membre : modérateur minimum, strictement au-dessus de lui.
    * Le propriétaire ne peut donc être expulsé que par un administrateur, qui

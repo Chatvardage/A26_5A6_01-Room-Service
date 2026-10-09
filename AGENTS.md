@@ -248,3 +248,10 @@ Validation : audit high, lint, 198 tests unitaires (couverture 100 %), 14 tests 
 - La limite de découverte de 100 correspond à la borne métier existante; renommer la constante ou déplacer des imports n’apporte pas de correction fonctionnelle.
 - js-yaml 4.3.2 existe dans le registre et l’installation reproductible ainsi que l’audit passent. Le supprimer réintroduirait l’avis corrigé.
 - Les métadonnées libc concernent des dépendances optionnelles de compilation; elles ne changent pas les autorisations métier. La construction réelle Alpine vérifie leur compatibilité plutôt qu’une édition manuelle du verrou.
+
+### Review 6084477946 — pagination et reconstruction
+
+- Un décalage au-delà du total des membres ou serveurs retourne une page vide sans requête SKIP; test d’un décalage de 999999999. Pas de plafond arbitraire 10000 qui empêcherait de parcourir un serveur légitime plus grand; le contrat de pagination reste inchangé.
+- apk upgrade actualise volontairement les paquets disponibles, avec image de diffusion identifiée par digest; npm reste verrouillé. Les RUN séparés ne changent pas la sécurité ni le démarrage et leur regroupement éditorial n’est pas retenu.
+- La course count/transfert sur le plafond des serveurs reste une limite connue de quota, sans contournement des droits de propriété : une garantie stricte demanderait de coordonner toutes les créations/transferts sous le même verrou transactionnel. Un verrou uniquement dans cette méthode ne résoudrait pas la course.
+- Les points favorables sur client-auth, YAML et métadonnées libc ne demandent aucune modification.

@@ -274,6 +274,17 @@ describe('ServersService', () => {
       );
     });
 
+    it('un décalage hors liste ne lance aucune requête SKIP de serveur', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(3);
+      await expect(
+        service.decouvrir(u('bob'), undefined, { decalage: 999999999 }),
+      ).resolves.toEqual({ serveurs: [], total: 3, suivant: null });
+      await expect(
+        service.listerPourAdmin(admin, { decalage: 999999999 }),
+      ).resolves.toEqual({ serveurs: [], total: 3, suivant: null });
+      expect(prisma.server.findMany).not.toHaveBeenCalled();
+    });
+
     it('decouvrir sans texte ne filtre pas sur le nom', async () => {
       prisma.server.count = jest.fn().mockResolvedValue(0);
       prisma.server.findMany.mockResolvedValue([]);
@@ -876,6 +887,16 @@ describe('ServersService', () => {
         skip: 0,
         take: 1,
       });
+    });
+
+    it('refuse le travail SQL de pagination au-delà du total réel', async () => {
+      prisma.server.findUnique.mockResolvedValue(serveurPour('bob'));
+      prisma.serverMember.findUnique.mockResolvedValue(membre('owner'));
+      prisma.serverMember.count.mockResolvedValue(2);
+      await expect(
+        service.listerMembres('srv-1', u('bob'), { decalage: 999999999 }),
+      ).resolves.toEqual({ membres: [], total: 3, suivant: null });
+      expect(prisma.serverMember.findMany).not.toHaveBeenCalled();
     });
 
     it('page suivante : décalée du propriétaire, dernière page', async () => {

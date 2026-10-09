@@ -122,22 +122,23 @@ export class ServersService {
         ? { name: { contains: recherche, mode: 'insensitive' as const } }
         : {}),
     };
-    const [total, serveurs] = await Promise.all([
-      this.prisma.server.count({ where }),
-      this.prisma.server.findMany({
-        where,
-        include: { _count: { select: { members: true } } },
-        // Les plus fréquentés d'abord ; le nom puis l'id départagent les
-        // égalités, pour que les pages ne se chevauchent pas.
-        orderBy: [
-          { members: { _count: 'desc' } },
-          { name: 'asc' },
-          { id: 'asc' },
-        ],
-        skip: decalage,
-        take: limite,
-      }),
-    ]);
+    const total = await this.prisma.server.count({ where });
+    if (decalage > 0 && decalage >= total) {
+      return { serveurs: [], total, suivant: null };
+    }
+    const serveurs = await this.prisma.server.findMany({
+      where,
+      include: { _count: { select: { members: true } } },
+      // Les plus fréquentés d'abord ; le nom puis l'id départagent les
+      // égalités, pour que les pages ne se chevauchent pas.
+      orderBy: [
+        { members: { _count: 'desc' } },
+        { name: 'asc' },
+        { id: 'asc' },
+      ],
+      skip: decalage,
+      take: limite,
+    });
     const fin = decalage + serveurs.length;
     return {
       serveurs: serveurs.map((serveur) => this.versResume(serveur)),
@@ -216,16 +217,17 @@ export class ServersService {
           });
     const autres = { serverId: id, userId: { not: serveur.ownerId ?? '' } };
     const enTete = proprietaire ? 1 : 0;
-    const [total, page] = await Promise.all([
-      this.prisma.serverMember.count({ where: autres }),
-      this.prisma.serverMember.findMany({
-        where: autres,
-        // 'moderateur' > 'membre' : les modérateurs d'abord.
-        orderBy: [{ role: 'desc' }, { joinedAt: 'asc' }, { userId: 'asc' }],
-        skip: Math.max(decalage - enTete, 0),
-        take: decalage === 0 ? limite - enTete : limite,
-      }),
-    ]);
+    const total = await this.prisma.serverMember.count({ where: autres });
+    if (decalage > 0 && decalage >= total + enTete) {
+      return { membres: [], total: total + enTete, suivant: null };
+    }
+    const page = await this.prisma.serverMember.findMany({
+      where: autres,
+      // 'moderateur' > 'membre' : les modérateurs d'abord.
+      orderBy: [{ role: 'desc' }, { joinedAt: 'asc' }, { userId: 'asc' }],
+      skip: Math.max(decalage - enTete, 0),
+      take: decalage === 0 ? limite - enTete : limite,
+    });
     const membres = [
       ...(decalage === 0 && proprietaire ? [proprietaire] : []),
       ...page,
@@ -246,15 +248,16 @@ export class ServersService {
     this.exigerAdmin(acteur);
     const decalage = options.decalage ?? 0;
     const limite = options.limite ?? LIMITE_MEMBRES_DEFAUT;
-    const [total, serveurs] = await Promise.all([
-      this.prisma.server.count(),
-      this.prisma.server.findMany({
-        include: { _count: { select: { members: true } } },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        skip: decalage,
-        take: limite,
-      }),
-    ]);
+    const total = await this.prisma.server.count();
+    if (decalage > 0 && decalage >= total) {
+      return { serveurs: [], total, suivant: null };
+    }
+    const serveurs = await this.prisma.server.findMany({
+      include: { _count: { select: { members: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      skip: decalage,
+      take: limite,
+    });
     const fin = decalage + serveurs.length;
     return {
       serveurs: serveurs.map((serveur) => this.versResume(serveur)),

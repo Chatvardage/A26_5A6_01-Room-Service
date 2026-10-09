@@ -222,35 +222,77 @@ describe('ServersService', () => {
       );
     });
 
-    it('decouvrir filtre les serveurs publics non rejoints, par nom', async () => {
+    it('decouvrir filtre les serveurs publics non rejoints, par nom, par pages', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(3);
       prisma.server.findMany.mockResolvedValue([
         { ...makeServeur({ isPublic: true }), _count: { members: 3 } },
       ]);
-      await expect(service.decouvrir(u('bob'), 'pro')).resolves.toEqual([
-        {
-          type: 'serveur',
-          id: 'srv-1',
-          nom: 'Projet',
-          icone: null,
-          public: true,
-          nombreMembres: 3,
-        },
-      ]);
+      await expect(service.decouvrir(u('bob'), 'pro')).resolves.toEqual({
+        serveurs: [
+          {
+            type: 'serveur',
+            id: 'srv-1',
+            nom: 'Projet',
+            icone: null,
+            public: true,
+            nombreMembres: 3,
+          },
+        ],
+        total: 3,
+        suivant: 1,
+      });
+      const where = {
+        isPublic: true,
+        members: { none: { userId: 'bob' } },
+        name: { contains: 'pro', mode: 'insensitive' },
+      };
+      expect(prisma.server.count).toHaveBeenCalledWith({ where });
       expect(prisma.server.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {
-            isPublic: true,
-            members: { none: { userId: 'bob' } },
-            name: { contains: 'pro', mode: 'insensitive' },
-          },
-          take: 20,
+          where,
+          orderBy: [
+            { members: { _count: 'desc' } },
+            { name: 'asc' },
+            { id: 'asc' },
+          ],
+          skip: 0,
+          take: 10,
         }),
       );
     });
 
+    it('decouvrir : page suivante et dernière page', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(3);
+      prisma.server.findMany.mockResolvedValue([
+        { ...makeServeur({ isPublic: true }), _count: { members: 1 } },
+      ]);
+      await expect(
+        service.decouvrir(u('bob'), undefined, { decalage: 2, limite: 2 }),
+      ).resolves.toMatchObject({ total: 3, suivant: null });
+      expect(prisma.server.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 2, take: 2 }),
+      );
+    });
+
+    it('un décalage hors liste ne lance aucune requête SKIP de serveur', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(3);
+      await expect(
+        service.decouvrir(u('bob'), undefined, { decalage: 999999999 }),
+      ).resolves.toEqual({ serveurs: [], total: 3, suivant: null });
+      await expect(
+        service.listerPourAdmin(admin, { decalage: 999999999 }),
+      ).resolves.toEqual({ serveurs: [], total: 3, suivant: null });
+      expect(prisma.server.findMany).not.toHaveBeenCalled();
+    });
+
     it('decouvrir sans texte ne filtre pas sur le nom', async () => {
+      prisma.server.count = jest.fn().mockResolvedValue(0);
       prisma.server.findMany.mockResolvedValue([]);
-      await service.decouvrir(u('bob'));
+      await expect(service.decouvrir(u('bob'))).resolves.toEqual({
+        serveurs: [],
+        total: 0,
+        suivant: null,
+      });
       expect(prisma.server.findMany.mock.calls[0][0].where).toEqual({
         isPublic: true,
         members: { none: { userId: 'bob' } },
@@ -568,6 +610,47 @@ describe('ServersService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it('un admin expulse le propriétaire en transférant la propriété', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ members: [membre('owner'), membre('bob')] }),
+      );
+      await service.expulser('srv-1', 'owner', admin, 'bob');
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.server.update).toHaveBeenCalledWith({
+        where: { id: 'srv-1' },
+        data: { ownerId: 'bob' },
+      });
+      expect(prisma.serverMember.delete).toHaveBeenCalledWith({
+        where: { serverId_userId: { serverId: 'srv-1', userId: 'owner' } },
+      });
+      expect(evenements.notifier).toHaveBeenCalledWith(
+        'srv-1',
+        'expulse',
+        expect.objectContaining({ cibleId: 'owner' }),
+      );
+    });
+
+    it('expulser le propriétaire exige un autre membre comme successeur', async () => {
+      prisma.server.findUnique.mockResolvedValue(
+        makeServeur({ members: [membre('owner'), membre('bob')] }),
+      );
+      await expect(service.expulser('srv-1', 'owner', admin)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(
+        service.expulser('srv-1', 'owner', admin, 'owner'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.expulser('srv-1', 'owner', admin, 'inconnu'),
+      ).rejects.toThrow(NotFoundException);
+      prisma.server.count.mockResolvedValueOnce(MAX_SERVEURS_POSSEDES);
+      await expect(
+        service.expulser('srv-1', 'owner', admin, 'bob'),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.server.update).not.toHaveBeenCalled();
+      expect(prisma.serverMember.delete).not.toHaveBeenCalled();
+    });
+
     it('un modérateur expulse un membre', async () => {
       prisma.server.findUnique.mockResolvedValue(makeServeur());
       await service.expulser('srv-1', 'bob', u('modo'));
@@ -804,6 +887,16 @@ describe('ServersService', () => {
         skip: 0,
         take: 1,
       });
+    });
+
+    it('refuse le travail SQL de pagination au-delà du total réel', async () => {
+      prisma.server.findUnique.mockResolvedValue(serveurPour('bob'));
+      prisma.serverMember.findUnique.mockResolvedValue(membre('owner'));
+      prisma.serverMember.count.mockResolvedValue(2);
+      await expect(
+        service.listerMembres('srv-1', u('bob'), { decalage: 999999999 }),
+      ).resolves.toEqual({ membres: [], total: 3, suivant: null });
+      expect(prisma.serverMember.findMany).not.toHaveBeenCalled();
     });
 
     it('page suivante : décalée du propriétaire, dernière page', async () => {

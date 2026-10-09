@@ -9,7 +9,10 @@ import { Prisma, ServerRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateServerDto, UpdateServerDto } from './dto/create-server.dto';
 import { SERVEUR_PAR_DEFAUT_ID } from './default-server';
-import { LIMITE_MEMBRES_DEFAUT } from './dto/member.dto';
+import {
+  LIMITE_DECOUVERTE_DEFAUT,
+  LIMITE_MEMBRES_DEFAUT,
+} from './dto/member.dto';
 import { EvenementsService } from './evenements.service';
 import {
   Acteur,
@@ -30,8 +33,6 @@ import {
   ServeurResumeResponse,
 } from './types/server-response.type';
 
-// Nombre maximal de serveurs publics renvoyés par la recherche.
-const LIMITE_DECOUVERTE = 20;
 // Serveurs qu'un même compte peut posséder : sans plafond, un script pouvait
 // en créer indéfiniment (chacun avec son salon).
 export const MAX_SERVEURS_POSSEDES = 100;
@@ -106,24 +107,44 @@ export class ServersService {
     );
   }
 
-  /** Serveurs publics dont l'appelant n'est pas encore membre. */
+  /** Serveurs publics dont l'appelant n'est pas encore membre, par pages. */
   async decouvrir(
     acteur: Acteur,
     recherche?: string,
-  ): Promise<ServeurResumeResponse[]> {
+    options: { decalage?: number; limite?: number } = {},
+  ): Promise<PageServeursResponse> {
+    const decalage = options.decalage ?? 0;
+    const limite = options.limite ?? LIMITE_DECOUVERTE_DEFAUT;
+    const where = {
+      isPublic: true,
+      members: { none: { userId: acteur.id } },
+      ...(recherche
+        ? { name: { contains: recherche, mode: 'insensitive' as const } }
+        : {}),
+    };
+    const total = await this.prisma.server.count({ where });
+    if (decalage > 0 && decalage >= total) {
+      return { serveurs: [], total, suivant: null };
+    }
     const serveurs = await this.prisma.server.findMany({
-      where: {
-        isPublic: true,
-        members: { none: { userId: acteur.id } },
-        ...(recherche
-          ? { name: { contains: recherche, mode: 'insensitive' as const } }
-          : {}),
-      },
+      where,
       include: { _count: { select: { members: true } } },
-      orderBy: { name: 'asc' },
-      take: LIMITE_DECOUVERTE,
+      // Les plus fréquentés d'abord ; le nom puis l'id départagent les
+      // égalités, pour que les pages ne se chevauchent pas.
+      orderBy: [
+        { members: { _count: 'desc' } },
+        { name: 'asc' },
+        { id: 'asc' },
+      ],
+      skip: decalage,
+      take: limite,
     });
-    return serveurs.map((serveur) => this.versResume(serveur));
+    const fin = decalage + serveurs.length;
+    return {
+      serveurs: serveurs.map((serveur) => this.versResume(serveur)),
+      total,
+      suivant: fin < total ? fin : null,
+    };
   }
 
   /**
@@ -196,16 +217,17 @@ export class ServersService {
           });
     const autres = { serverId: id, userId: { not: serveur.ownerId ?? '' } };
     const enTete = proprietaire ? 1 : 0;
-    const [total, page] = await Promise.all([
-      this.prisma.serverMember.count({ where: autres }),
-      this.prisma.serverMember.findMany({
-        where: autres,
-        // 'moderateur' > 'membre' : les modérateurs d'abord.
-        orderBy: [{ role: 'desc' }, { joinedAt: 'asc' }, { userId: 'asc' }],
-        skip: Math.max(decalage - enTete, 0),
-        take: decalage === 0 ? limite - enTete : limite,
-      }),
-    ]);
+    const total = await this.prisma.serverMember.count({ where: autres });
+    if (decalage > 0 && decalage >= total + enTete) {
+      return { membres: [], total: total + enTete, suivant: null };
+    }
+    const page = await this.prisma.serverMember.findMany({
+      where: autres,
+      // 'moderateur' > 'membre' : les modérateurs d'abord.
+      orderBy: [{ role: 'desc' }, { joinedAt: 'asc' }, { userId: 'asc' }],
+      skip: Math.max(decalage - enTete, 0),
+      take: decalage === 0 ? limite - enTete : limite,
+    });
     const membres = [
       ...(decalage === 0 && proprietaire ? [proprietaire] : []),
       ...page,
@@ -226,15 +248,16 @@ export class ServersService {
     this.exigerAdmin(acteur);
     const decalage = options.decalage ?? 0;
     const limite = options.limite ?? LIMITE_MEMBRES_DEFAUT;
-    const [total, serveurs] = await Promise.all([
-      this.prisma.server.count(),
-      this.prisma.server.findMany({
-        include: { _count: { select: { members: true } } },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        skip: decalage,
-        take: limite,
-      }),
-    ]);
+    const total = await this.prisma.server.count();
+    if (decalage > 0 && decalage >= total) {
+      return { serveurs: [], total, suivant: null };
+    }
+    const serveurs = await this.prisma.server.findMany({
+      include: { _count: { select: { members: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      skip: decalage,
+      take: limite,
+    });
     const fin = decalage + serveurs.length;
     return {
       serveurs: serveurs.map((serveur) => this.versResume(serveur)),
@@ -380,14 +403,21 @@ export class ServersService {
     });
   }
 
-  /** Expulser : modérateur minimum, et strictement au-dessus de la cible. */
+  /**
+   * Expulser un membre : modérateur minimum, strictement au-dessus de lui.
+   * Le propriétaire ne peut donc être expulsé que par un administrateur, qui
+   * désigne alors un autre membre comme nouveau propriétaire : sans ça, le
+   * propriétaire gardait tous ses droits (`ownerId`) sans être membre.
+   */
   async expulser(
     id: string,
     utilisateurId: string,
     acteur: Acteur,
+    nouveauProprietaireId?: string,
   ): Promise<ServeurResponse> {
     const { serveur, role } = await this.contexteVisible(id, acteur, [
       utilisateurId,
+      ...(nouveauProprietaireId ? [nouveauProprietaireId] : []),
     ]);
     this.refuserSiParDefaut(
       serveur,
@@ -403,16 +433,56 @@ export class ServersService {
       'Rôle insuffisant pour expulser ce membre',
     );
 
-    await this.prisma.serverMember.delete({
-      where: { serverId_userId: { serverId: id, userId: utilisateurId } },
-    });
+    if (serveur.ownerId === utilisateurId) {
+      await this.transfererPuisExpulser(
+        serveur,
+        utilisateurId,
+        nouveauProprietaireId,
+      );
+    } else {
+      await this.prisma.serverMember.delete({
+        where: { serverId_userId: { serverId: id, userId: utilisateurId } },
+      });
+    }
     // L'expulsé fait partie des destinataires (membres d'avant l'expulsion) :
-    // son app ferme le serveur aussitôt.
+    // son app ferme le serveur aussitôt ; le nouveau propriétaire recharge
+    // le serveur et voit ses nouveaux droits.
     this.evenements.notifier(id, 'expulse', {
       destinataires: this.idsMembres(serveur),
       cibleId: utilisateurId,
     });
     return this.obtenir(id, acteur);
+  }
+
+  /** Propriétaire expulsé : la propriété passe à un autre membre, puis il part. */
+  private async transfererPuisExpulser(
+    serveur: ServeurComplet,
+    ancienId: string,
+    nouveauId: string | undefined,
+  ): Promise<void> {
+    if (!nouveauId || nouveauId === ancienId) {
+      throw new BadRequestException(
+        'Choisissez un autre membre comme nouveau propriétaire',
+      );
+    }
+    this.membreOuErreur(serveur, nouveauId);
+    const possedes = await this.prisma.server.count({
+      where: { ownerId: nouveauId },
+    });
+    if (possedes >= MAX_SERVEURS_POSSEDES) {
+      throw new BadRequestException(
+        `Limite atteinte : ce membre possède déjà ${MAX_SERVEURS_POSSEDES} serveurs`,
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.server.update({
+        where: { id: serveur.id },
+        data: { ownerId: nouveauId },
+      }),
+      this.prisma.serverMember.delete({
+        where: { serverId_userId: { serverId: serveur.id, userId: ancienId } },
+      }),
+    ]);
   }
 
   /** Nommer ou retirer un modérateur : propriétaire ou admin. */
